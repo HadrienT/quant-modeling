@@ -869,9 +869,8 @@ export interface paths {
         put?: never;
         /**
          * Calibrate
-         * @description Black-Scholes and SABR: fetch the ticker's chain (DB-first, live
-         *     yfinance fallback -- kept on purpose for these two, see CLAUDE.md), run
-         *     the existing SVI vol-surface pipeline, pick the calibrated slice closest
+         * @description Black-Scholes and SABR: the ticker's stored surface (the database
+         *     only, as every model here), pick the calibrated slice closest
          *     to the requested maturity, and either read its ATM vol off
          *     (Black-Scholes) or fit SABR to it (see
          *     vol_surface.sabr_quotes_from_svi_slice). Local vol, Heston and SLV are
@@ -10415,11 +10414,6 @@ export interface operations {
                 ticker: string;
                 /** @description Risk-free rate */
                 rate?: number;
-                min_open_interest?: number;
-                min_bid?: number;
-                max_spread_ratio?: number;
-                min_moneyness?: number;
-                max_moneyness?: number;
             };
             header?: never;
             path?: never;
@@ -10454,11 +10448,6 @@ export interface operations {
                 ticker: string;
                 /** @description Risk-free rate */
                 rate?: number;
-                min_open_interest?: number;
-                min_bid?: number;
-                max_spread_ratio?: number;
-                min_moneyness?: number;
-                max_moneyness?: number;
             };
             header?: never;
             path?: never;
@@ -10507,11 +10496,6 @@ export interface operations {
                 seed?: number;
                 /** @description Compute finite-difference greeks */
                 compute_greeks?: boolean;
-                min_open_interest?: number;
-                min_bid?: number;
-                max_spread_ratio?: number;
-                min_moneyness?: number;
-                max_moneyness?: number;
             };
             header?: never;
             path?: never;
@@ -10578,11 +10562,6 @@ export interface operations {
                 ticker: string;
                 /** @description Risk-free rate */
                 rate?: number;
-                min_open_interest?: number;
-                min_bid?: number;
-                max_spread_ratio?: number;
-                min_moneyness?: number;
-                max_moneyness?: number;
             };
             header?: never;
             path?: never;

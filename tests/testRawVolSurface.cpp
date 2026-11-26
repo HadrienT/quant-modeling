@@ -1,6 +1,11 @@
 #include <gtest/gtest.h>
 
 #include "quantModeling/market/raw_vol_surface.hpp"
+#include "quantModeling/market/svi.hpp"
+#include "quantModeling/market/svi_calibration.hpp"
+#include "quantModeling/market/vol_surface_pipeline.hpp"
+#include "quantModeling/models/equity/sabr.hpp"
+#include "quantModeling/utils/stats.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -283,6 +288,199 @@ namespace quantModeling
         ASSERT_EQ(s1.quotes().size(), s2.quotes().size());
         for (std::size_t i = 0; i < s1.quotes().size(); ++i)
             EXPECT_DOUBLE_EQ(s1.quotes()[i].strike, s2.quotes()[i].strike);
+    }
+
+    // ── Quotes cleaned at ingestion (options.chain_iv, WP 31) ───────────────
+
+    namespace
+    {
+        /// One OTM quote as options.chain_iv gives it: the price is Black's at
+        /// (F, DF, iv), the bid/ask `rel_spread` wide around it.
+        RawOptionQuote chain_iv_quote(Real strike, Real ttm, Real forward, Real discount, Real iv,
+                                      Real rel_spread = 0.02)
+        {
+            const bool is_call = strike >= forward;
+            const Real call = black76_call_price(forward, strike, ttm, iv, discount);
+            const Real price = is_call ? call : call - discount * (forward - strike);
+            RawOptionQuote q;
+            q.strike = strike;
+            q.ttm = ttm;
+            q.is_call = is_call;
+            q.bid = price * (1.0 - 0.5 * rel_spread);
+            q.ask = price * (1.0 + 0.5 * rel_spread);
+            q.last = price;
+            q.implied_vol = iv;
+            q.has_iv = true;
+            q.forward = forward;
+            q.discount = discount;
+            return q;
+        }
+
+        CleaningParams ingestion_params()
+        {
+            CleaningParams p;
+            p.ingestion_cleaned = true;
+            return p;
+        }
+
+        /// A smile with skew and curvature, in k = ln(K / F).
+        Real smile(Real k)
+        {
+            return 0.20 - 0.10 * k + 0.15 * k * k;
+        }
+    } // namespace
+
+    TEST(RawVolSurface, StoredForwardAndDiscountOverrideTheCarry)
+    {
+        // F far from S exp((r - q) T): the stored one must win, at its
+        // maturity only.
+        const Real F = 108.0, DF = 0.95, T = 1.0;
+        RawVolSurface surface({chain_iv_quote(110.0, T, F, DF, 0.2)}, 100.0, 0.03, 0.01, ingestion_params());
+        EXPECT_DOUBLE_EQ(surface.forward(T), F);
+        EXPECT_DOUBLE_EQ(surface.discount(T), DF);
+        EXPECT_NEAR(surface.log_moneyness(F, T), 0.0, 1e-15);
+        EXPECT_NEAR(surface.forward(0.5), 100.0 * std::exp(0.02 * 0.5), 1e-12);
+        EXPECT_NEAR(surface.discount(0.5), std::exp(-0.03 * 0.5), 1e-15);
+    }
+
+    TEST(RawVolSurface, StoredForwardSurvivesItsQuotesBeingCleanedOut)
+    {
+        RawOptionQuote q = chain_iv_quote(110.0, 1.0, 108.0, 0.95, 0.2);
+        q.implied_vol = 9.0; // outside the plausible range: cleaned out
+        RawVolSurface surface({q}, 100.0, 0.03, 0.01, ingestion_params());
+        EXPECT_TRUE(surface.quotes().empty());
+        EXPECT_DOUBLE_EQ(surface.forward(1.0), 108.0);
+    }
+
+    TEST(RawVolSurface, IngestionCleanedRequiresAForwardOnEveryQuote)
+    {
+        RawOptionQuote q = chain_iv_quote(110.0, 1.0, 108.0, 0.95, 0.2);
+        q.forward = 0.0;
+        EXPECT_THROW(RawVolSurface({q}, 100.0, 0.03, 0.01, ingestion_params()), InvalidInput);
+    }
+
+    TEST(RawVolSurface, IngestionCleanedIgnoresOpenInterestAndMinBid)
+    {
+        // No OI, no volume, a bid under the legacy 0.05 $ floor: the reader
+        // already judged it (two ticks), so it stays.
+        RawOptionQuote q = chain_iv_quote(150.0, 0.25, 100.0, 0.99, 0.25);
+        ASSERT_LT(q.bid, 0.05);
+        ASSERT_GT(q.bid, 0.0);
+        RawVolSurface surface({q}, 100.0, 0.0, 0.0, ingestion_params());
+        EXPECT_EQ(surface.quotes().size(), 1u);
+        // The legacy path drops it on OI.
+        q.forward = q.discount = 0.0;
+        EXPECT_TRUE(RawVolSurface({q}, 100.0, 0.0, 0.0).quotes().empty());
+    }
+
+    TEST(RawVolSurface, IngestionCleanedKeepsTheSpreadCut)
+    {
+        RawVolSurface surface({chain_iv_quote(100.0, 1.0, 100.0, 0.96, 0.2, 0.6)}, 100.0, 0.0, 0.0,
+                              ingestion_params());
+        EXPECT_TRUE(surface.quotes().empty());
+    }
+
+    TEST(RawVolSurface, IngestionMoneynessBandIsInLogForwardMoneyness)
+    {
+        // S = 100 but F = 130: K = 75 is K/S = 0.75 (inside the legacy band)
+        // and ln(K/F) = -0.55 (inside 0.6); K = 70 is ln(K/F) = -0.62 (out).
+        const Real F = 130.0, DF = 0.9, T = 2.0;
+        std::vector<RawOptionQuote> raw = {chain_iv_quote(75.0, T, F, DF, 0.3), chain_iv_quote(70.0, T, F, DF, 0.3)};
+        RawVolSurface surface(raw, 100.0, 0.0, 0.0, ingestion_params());
+        ASSERT_EQ(surface.quotes().size(), 1u);
+        EXPECT_DOUBLE_EQ(surface.quotes()[0].strike, 75.0);
+    }
+
+    TEST(RawVolSurface, IngestionCleanedHasNoPerQuoteCalendarCheck)
+    {
+        // Total variance decreasing in T at one strike: dropped by the legacy
+        // fixed-strike check, kept here (the fitted slices are checked).
+        std::vector<RawOptionQuote> raw = {chain_iv_quote(100.0, 0.5, 100.0, 0.98, 0.30),
+                                           chain_iv_quote(100.0, 1.0, 100.0, 0.96, 0.20)};
+        RawVolSurface surface(raw, 100.0, 0.0, 0.0, ingestion_params());
+        EXPECT_EQ(surface.quotes().size(), 2u);
+    }
+
+    TEST(RawVolSurface, AnArbitrageFreeSmileSurvivesWhole)
+    {
+        // Puts and calls, unequal strike spacing, a skewed smile: Black prices
+        // of one smooth smile are convex, so nothing may be dropped.
+        const Real F = 102.0, DF = 0.97, T = 0.75;
+        const std::vector<Real> strikes = {60, 70, 78, 85, 90, 94, 97, 100, 102, 103, 106, 110, 118, 130, 150};
+        std::vector<RawOptionQuote> raw;
+        for (const Real K : strikes)
+            raw.push_back(chain_iv_quote(K, T, F, DF, smile(std::log(K / F))));
+        RawVolSurface surface(raw, 100.0, 0.0, 0.0, ingestion_params());
+        EXPECT_EQ(surface.quotes().size(), raw.size());
+    }
+
+    TEST(RawVolSurface, ButterflyCountsOnlyBeyondTheSpreads)
+    {
+        const Real F = 100.0, DF = 1.0, T = 0.5;
+        auto chain = [&](Real middle_iv, Real middle_spread)
+        {
+            std::vector<RawOptionQuote> raw = {chain_iv_quote(95.0, T, F, DF, 0.2),
+                                               chain_iv_quote(100.0, T, F, DF, middle_iv, middle_spread),
+                                               chain_iv_quote(105.0, T, F, DF, 0.2)};
+            return RawVolSurface(raw, 100.0, 0.0, 0.0, ingestion_params()).quotes().size();
+        };
+        // A middle quote far above its neighbours' line breaks convexity...
+        const Real high_iv = 0.25;
+        const Real c0 = black76_call_price(F, 95.0, T, 0.2, 1.0), c2 = black76_call_price(F, 105.0, T, 0.2, 1.0);
+        ASSERT_GT(black76_call_price(F, 100.0, T, high_iv, 1.0), 0.5 * (c0 + c2));
+        EXPECT_EQ(chain(high_iv, 0.002), 2u);
+        // ...but not when its own spread is wide enough to reach the line.
+        EXPECT_EQ(chain(high_iv, 0.4), 3u);
+        EXPECT_EQ(chain(0.2, 0.002), 3u);
+    }
+
+    TEST(SVIQuotesFromRawSurface, IngestionWeightIsTheInverseSpreadSquaredAtEqualVega)
+    {
+        const Real F = 100.0, DF = 0.97, T = 1.0;
+        RawOptionQuote tight = chain_iv_quote(110.0, T, F, DF, 0.2, 0.02);
+        RawOptionQuote wide = tight;
+        const Real mid = tight.mid();
+        wide.bid = mid * (1.0 - 0.02);
+        wide.ask = mid * (1.0 + 0.02); // twice the spread, same vega
+        wide.strike = 110.0 + 1e-9;    // its own strike, same vega to 1e-9
+        RawVolSurface surface({tight, wide}, 100.0, 0.0, 0.0, ingestion_params());
+        const auto quotes = svi_quotes_from_raw_surface(surface, T);
+        ASSERT_EQ(quotes.size(), 2u);
+        const Real ratio = quotes[0].weight / quotes[1].weight;
+        EXPECT_NEAR(std::max(ratio, 1.0 / ratio), 4.0, 1e-6);
+        // And it is the inverse variance of the IV half-spread.
+        const Real vega = F * norm_pdf(0.5 * 0.2 - std::log(110.0 / F) / 0.2) * 1.0; // forward vega at sqrt(T) = 1
+        const Real iv_half = 0.5 * (tight.ask - tight.bid) / DF / vega;
+        EXPECT_NEAR(quotes[0].weight * iv_half * iv_half, 1.0, 1e-9);
+    }
+
+    TEST(VolSurfacePipeline, IngestionCleanedFitsTheSmileOnTheStoredForwards)
+    {
+        // Every maturity's forward is far from the carry the pipeline is
+        // given (r = q = 0, S = 100): the fitted smile must sit on the
+        // stored forwards, or its ATM and skew come out shifted.
+        const std::vector<Real> ttms = {0.25, 0.5, 1.0, 2.0};
+        std::vector<RawOptionQuote> raw;
+        for (const Real T : ttms)
+        {
+            const Real F = 100.0 * std::exp(0.06 * T), DF = std::exp(-0.045 * T);
+            for (Real k = -0.5; k <= 0.5001; k += 0.05)
+            {
+                // Total variance growing in T: a calendar-free surface.
+                const Real iv = smile(k) * (1.0 + 0.05 * T);
+                raw.push_back(chain_iv_quote(F * std::exp(k), T, F, DF, iv, 0.02));
+            }
+        }
+        CleaningParams params = ingestion_params();
+        const VolSurfacePipelineResult r = calibrate_vol_surface(raw, 100.0, 0.0, 0.0, -0.6, 0.6, 40, 10, 6, params);
+        ASSERT_EQ(r.slices.size(), ttms.size());
+        for (const auto &slice : r.slices)
+        {
+            EXPECT_EQ(slice.n_quotes, 21u);
+            for (Real k = -0.4; k <= 0.4001; k += 0.1)
+                EXPECT_NEAR(svi_implied_vol(k, slice.ttm, slice.params), smile(k) * (1.0 + 0.05 * slice.ttm), 2e-3)
+                    << "T = " << slice.ttm << ", k = " << k;
+        }
     }
 
 } // namespace quantModeling

@@ -2,10 +2,9 @@
 
 Market data no longer comes from live yfinance / FRED calls: `data-ingest`
 (a separate self-hosted service) writes it to a local Postgres on a schedule.
-This module is read-only, with one narrow, explicit exception (see
-`cache_option_chain_snapshot` at the bottom): it never creates tables, and
-callers should prefer reading over writing wherever the daily-scheduled
-tables already cover what they need.
+This module is read-only: it never writes and never creates tables (the
+one write path, caching a live yfinance chain, went with the live fallback
+on 2026-11-26, WP 31).
 
 Tables it reads:
   prices.sp500_daily          (date, ticker, open, high, low, close, volume)
@@ -681,7 +680,7 @@ def options_chain_snapshot(
     omitted). Empty list if data-ingest has never captured this ticker —
     options-chain-snapshot tracks a small fixed universe
     (OPTIONS_CHAIN_TICKERS), not every ticker sp500-prices does, so an empty
-    result here is routine, not an error; callers fall back to a live fetch.
+    result here is routine, not an error, and there is no live fallback.
     """
     snapshot_date = as_of or latest_options_snapshot_date(ticker)
     if snapshot_date is None:
@@ -709,6 +708,144 @@ def options_chain_snapshot(
             volume=int(r[7]),
             open_interest=int(r[8]),
             implied_volatility=float(r[9]) if r[9] is not None else None,
+        )
+        for r in rows
+    ]
+
+
+# ── options.chain_iv: the quotes cleaned at ingestion (WP 31) ────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class ChainIvRow:
+    """One row of options.chain_iv, written by data-ingest's options-chain-iv
+    source from options.chain_snapshot: one OTM quote (both sides near the
+    forward, the ITM one flagged `not_otm`), its expiry's forward and
+    discount, and our own Black-76 implied vol on its European price. The
+    contract, flags included, is data-ingest's docs/sources.md."""
+
+    expiry: date
+    root: str
+    option_type: str  # "call" or "put"
+    strike: float
+    ttm: float  # ACT/365F, from the session's close to the settlement time
+    bid: Optional[float]
+    ask: Optional[float]
+    mid: Optional[float]
+    exercise: str  # "european" or "american"
+    forward: float
+    discount: float
+    implied_vol: Optional[float]
+    log_moneyness: float
+    flags: int
+
+
+@dataclass(frozen=True, slots=True)
+class ChainIvExpiry:
+    """One accepted (ticker, expiry, root) of options.chain_iv_expiries."""
+
+    expiry: date
+    root: str
+    ttm: float
+    forward: float
+    discount: float
+    spot: Optional[float]
+    discount_source: Optional[str]  # "parity" or "fred"
+
+
+@dataclass(frozen=True)
+class ChainIvLoad:
+    """The latest computed chain of a ticker on or before a date, from
+    data-ingest's registry options.chain_iv_loads (one row per ticker and
+    day, written with the rows)."""
+
+    snapshot_date: date
+    row_count: int
+    checksum: Optional[str]
+    method_version: int
+    curve_source: Optional[str]
+
+
+def options_chain_iv_load_on_or_before(
+    ticker: str, as_of: date
+) -> Optional[ChainIvLoad]:
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT date, row_count, checksum, method_version, curve_source "
+            "FROM options.chain_iv_loads WHERE ticker = %s AND date <= %s "
+            "ORDER BY date DESC LIMIT 1",
+            (ticker.upper(), as_of),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    return ChainIvLoad(
+        snapshot_date=row[0],
+        row_count=int(row[1]),
+        checksum=row[2],
+        method_version=int(row[3]),
+        curve_source=row[4],
+    )
+
+
+def options_chain_iv(ticker: str, as_of: date) -> List[ChainIvRow]:
+    """Every stored row of a ticker's computed chain on `as_of`, flags
+    included: the reader decides what to keep (market_snapshot)."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT expiry, root, option_type, strike, ttm, bid, ask, mid, exercise, "
+            "forward, discount, implied_vol, log_moneyness, flags "
+            "FROM options.chain_iv WHERE ticker = %s AND date = %s "
+            "ORDER BY expiry, root, option_type, strike",
+            (ticker.upper(), as_of),
+        )
+        rows = cur.fetchall()
+
+    def f(x):
+        return float(x) if x is not None else None
+
+    return [
+        ChainIvRow(
+            expiry=r[0],
+            root=r[1],
+            option_type=r[2],
+            strike=float(r[3]),
+            ttm=float(r[4]),
+            bid=f(r[5]),
+            ask=f(r[6]),
+            mid=f(r[7]),
+            exercise=r[8],
+            forward=float(r[9]),
+            discount=float(r[10]),
+            implied_vol=f(r[11]),
+            log_moneyness=float(r[12]),
+            flags=int(r[13]),
+        )
+        for r in rows
+    ]
+
+
+def options_chain_iv_expiries(ticker: str, as_of: date) -> List[ChainIvExpiry]:
+    """The accepted expiries of a ticker's computed chain on `as_of`, in
+    maturity order: the market's forwards and discounts."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT expiry, root, ttm, forward, discount, spot, discount_source "
+            "FROM options.chain_iv_expiries WHERE ticker = %s AND date = %s "
+            "AND status = 'accepted' AND forward IS NOT NULL AND discount IS NOT NULL "
+            "AND ttm > 0 ORDER BY ttm",
+            (ticker.upper(), as_of),
+        )
+        rows = cur.fetchall()
+    return [
+        ChainIvExpiry(
+            expiry=r[0],
+            root=r[1],
+            ttm=float(r[2]),
+            forward=float(r[3]),
+            discount=float(r[4]),
+            spot=float(r[5]) if r[5] is not None else None,
+            discount_source=r[6],
         )
         for r in rows
     ]
@@ -969,73 +1106,3 @@ def french_first_vintage(
             (dataset, start, end),
         )
         return [(d, f, float(v)) for d, f, v in cur.fetchall()]
-
-
-# ── The one write path: caching a live option-chain fetch ──────────────────
-
-
-def cache_option_chain_snapshot(
-    ticker: str, snapshot_date: date, rows: Sequence[dict]
-) -> int:
-    """Upsert quotes just fetched live from yfinance into
-    options.chain_snapshot -- this module's one deliberate exception to
-    read-only.
-
-    Why this table and not the others: an option chain is the one fetch in
-    this pipeline that is both expensive (one call per expiration, on top of
-    the list call) and rate-limited (an unofficial endpoint), so a second
-    request for the same ticker on the same day hitting yfinance again is a
-    real, avoidable cost. A spot price or a dividend yield is a single cheap
-    call, and its tracked universe (sp500-prices, dividend-yields) already
-    covers what the vol-surface pipeline needs daily, so there is nothing
-    worth caching there beyond what those two sources already provide on
-    schedule.
-
-    Same schema, same upsert semantics data-ingest's own scheduled run would
-    use (ON CONFLICT on the declared primary key): if options-chain-snapshot
-    is ever pointed at this ticker too, its next run simply overwrites these
-    rows, harmlessly. If the table does not exist yet (a fresh deployment
-    where data-ingest has never run), this raises StoreUnavailable like any
-    other unreachable-store case, and the caller treats caching as best-effort.
-    """
-    if not rows:
-        return 0
-
-    payload = [
-        {
-            "date": snapshot_date,
-            "ticker": ticker.upper(),
-            "expiry": r["expiry"],
-            "option_type": r["option_type"],
-            "strike": r["strike"],
-            "bid": r.get("bid"),
-            "ask": r.get("ask"),
-            "last_price": r.get("last_price"),
-            "volume": r.get("volume", 0),
-            "open_interest": r.get("open_interest", 0),
-            "implied_volatility": r.get("implied_volatility"),
-        }
-        for r in rows
-    ]
-
-    with _cursor() as cur:
-        cur.executemany(
-            """
-            INSERT INTO options.chain_snapshot
-                (date, ticker, expiry, option_type, strike, bid, ask,
-                 last_price, volume, open_interest, implied_volatility)
-            VALUES
-                (%(date)s, %(ticker)s, %(expiry)s, %(option_type)s, %(strike)s,
-                 %(bid)s, %(ask)s, %(last_price)s, %(volume)s, %(open_interest)s,
-                 %(implied_volatility)s)
-            ON CONFLICT (date, ticker, expiry, option_type, strike) DO UPDATE SET
-                bid = EXCLUDED.bid,
-                ask = EXCLUDED.ask,
-                last_price = EXCLUDED.last_price,
-                volume = EXCLUDED.volume,
-                open_interest = EXCLUDED.open_interest,
-                implied_volatility = EXCLUDED.implied_volatility
-            """,
-            payload,
-        )
-    return len(payload)

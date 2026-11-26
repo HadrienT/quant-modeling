@@ -203,7 +203,20 @@ namespace quantModeling
             sq.market_iv = q.implied_vol;
             // Call and put vega coincide under Black-Scholes at the same
             // (S, K, T, sigma), so is_call does not affect the weight.
-            sq.weight = std::max(bs_vega_forward(forward, q.strike, ttm, q.implied_vol), Real(1e-8));
+            const Real vega = bs_vega_forward(forward, q.strike, ttm, q.implied_vol);
+            if (surface.ingestion_cleaned() && q.ask > q.bid)
+            {
+                // WP 31 D4: the residual counts in half-spreads of vol, the
+                // quote's own IV error (Hentschel 2003), so the weight is
+                // that error's inverse variance. The half-spread is
+                // undiscounted to match the forward vega, and floored at
+                // 0.01 vol point so a one-tick spread does not take the slice.
+                const Real half_spread = 0.5 * (q.ask - q.bid) / surface.discount(ttm);
+                const Real iv_half_spread = std::max(half_spread / std::max(vega, Real(1e-300)), Real(1e-4));
+                sq.weight = 1.0 / (iv_half_spread * iv_half_spread);
+            }
+            else
+                sq.weight = std::max(vega, Real(1e-8));
             out.push_back(sq);
         }
         return out;
