@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | *In progress*: decisions D1, D2, D3, D5 taken on 2026-11-26 (§10). The `data-ingest` lots L1–L4 and L8 are done (data-ingest #32, #33, issue data-ingest #31); what they measured, and where they depart from this design, is in §4.7. L0 done, D4 decided (§6.1, §10). L5 done (§5.8, PR #388); the live Yahoo fallbacks removed. L6 done (§5.9, PR #390), the term structure for every model moved to WP 32 (#389). L7 measured (§5.10): the switch to `chain_iv` is supported on every reference; E2 waits for the eSSVI local vol to reprice its own surface (WP 30). The switch is the maintainer's decision. Issue #386 |
+| **Status** | *In progress*: decisions D1, D2, D3, D5 taken on 2026-11-26 (§10). The `data-ingest` lots L1–L4 and L8 are done (data-ingest #32, #33, issue data-ingest #31); what they measured, and where they depart from this design, is in §4.7. L0 done, D4 decided (§6.1, §10). L5 done (§5.8, PR #388); the live Yahoo fallbacks removed. L6 done (§5.9, PR #390), the term structure for every model moved to WP 32 (#389). L7 measured (§5.10): the switch to `chain_iv` is supported on every reference; E2 waits for the eSSVI local vol to reprice its own surface (WP 30). Production switched to `chain_iv` (§5.11, decided by the maintainer on 2026-11-26: "the path that gives the best results"). Issue #386 |
 | **Depends on** | WP 08 (stored option chains, `RawVolSurface` cleaning), WP 30 (the eSSVI surface that consumes the quotes) |
 | **Unlocks** | WP 30 E2 (the API on eSSVI, #381): its measured price moves mean nothing until the quotes are right |
 | **Repositories** | `~/data-ingest` (ingestion, the new derived table) and this one (the consumer, the reduced cleaning) |
@@ -282,6 +282,13 @@ What it says:
 - **eSSVI is the best surface and not yet the best local vol.** It reprices the market's put at S0 and its fair variance above 50 % exactly, and Heston calibrated on it is the closest model of the table. But the local vol built from it misprices that same put by −3.5 % (SLV −4.7 %), and its variance swap drops to 0.049 against the surface's own 0.0597: the Dupire step from the eSSVI surface loses what the surface holds, most of it in the wings (a grid flat past its band would do this). On SVI, the local vol stays within 1.3 % of the put.
 - So E2 needs the eSSVI local vol to reprice its own surface first: a vanilla of every pillar within its Monte Carlo error, and the variance swap within the surface's band. That is a WP 30 lot, not a data question.
 
+### 5.11 The switch (2026-11-26)
+
+- `docker-compose.prod.yml` sets `QM_OPTION_DATA=${QM_OPTION_DATA:-chain_iv}`; the code's default stays `legacy` (dev, tests). Rollback: `QM_OPTION_DATA=legacy` in the production `.env`, then a restart.
+- The pages leave the rate empty on a single-underlying market product (the product pages' "Rate override", the scripting page's "Rate % (override)"); several underlyings and quantos still send a typed rate, their path keeps the stored yields.
+- The calibration warm-up, under `chain_iv`, warms the market the pages ask for: rate empty, the library's one-year horizon.
+- Rehearsal on 2026-11-26 before the switch: every tracked ticker calibrates (0.2–0.8 s, SPY 4.3 s on the SPX surface); the 39 single-underlying library products price under `auto` with no error, the slowest in 8.3 s. Against `legacy` at the pages' old 4 %, the median move is 8.2 %; the equity forward moves +17.3 %, exactly DF (F − K) at the market's carry (3.78 % against 4 % − 0.79 %).
+
 ## 6. Review of the filters used so far (`CleaningParams`, `RawVolSurface`)
 
 Each filter of the current pipeline, what it does, what is wrong with it, what the literature does, and what to do. The literature column is to be completed by L0 (§7). The rows cited there come from what L0 has already read.
@@ -432,7 +439,7 @@ Order: L0 first, then L1 → L2 → L3 → L4 → L5 → L6 → L7. L1 and L2 on
   - The moneyness band is \|ln K/F\| ≤ 0.6.
   - The butterfly check counts a violation beyond the three quotes' half-spreads only.
 - **D5 — A switch for the data, then E2 separately.**
-  - `QM_OPTION_DATA=chain_iv|legacy` (default `legacy` until the maintainer switches), read by `market_snapshot`, the surface model in the calibration's cache key as for `QM_VOL_SURFACE`.
+  - `QM_OPTION_DATA=chain_iv|legacy`, read by `market_snapshot`, in the calibration's cache key. Production on `chain_iv` since 2026-11-26 (§5.11).
   - The switch goes live after a comparative measurement is presented (§8). Rollback needs no code change.
   - E2 (eSSVI, `QM_VOL_SURFACE`) comes after, with its own switch, so that each price move is attributed to its cause.
 

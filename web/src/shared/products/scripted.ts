@@ -341,6 +341,7 @@ export function typedAssets(s: string, n: number) {
 
 function descriptor(p: ScriptedProduct): ProductDescriptor {
 	const multi = p.underlyings > 1;
+	const marketRate = !multi && !p.quanto;
 	const shape: Record<string, z.ZodType> = {};
 	const defaults: Record<string, unknown> = {};
 	const fields: Record<string, FieldOverride> = {};
@@ -420,7 +421,9 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 			.string()
 			.min(1, "A ticker per underlying")
 			.regex(/^[A-Za-z0-9.\-^:, ]+$/, "Tickers separated by commas");
-		shape.rate = f.ratePct();
+		// one ticker: an empty rate is the market's (WP 31 L6); several, or a
+		// quanto, are priced on the stored yields and take a typed rate
+		shape.rate = marketRate ? f.ratePctOrMarket() : f.ratePct();
 	}
 	shape.n_paths = f.paths();
 	shape.seed = f.seed();
@@ -436,8 +439,14 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 				: p.quanto
 					? "SAP.DE"
 					: "SPY",
-			rate: 4,
+			rate: marketRate ? "" : 4,
 		});
+		if (marketRate)
+			fields.rate = {
+				label: "Rate override (empty: the market's)",
+				unit: "%",
+				group: "market",
+			};
 		Object.assign(fields, {
 			model: {
 				label: "Dynamics (model)",
@@ -563,7 +572,8 @@ export function scriptedRequest(
 			...length,
 			model: "black_scholes",
 			...market,
-			rate: pct(v.rate),
+			// typed inputs: no market supplies the rate, the server requires one
+			...(v.rate === "" || v.rate == null ? {} : { rate: pct(v.rate) }),
 			n_paths: Number(v.n_paths),
 			seed: Number(v.seed),
 			...precisionRequest(v),
@@ -585,7 +595,7 @@ export function scriptedRequest(
 		...length,
 		model: model ?? v.model,
 		...market,
-		rate: pct(v.rate),
+		...(v.rate === "" || v.rate == null ? {} : { rate: pct(v.rate) }),
 		n_paths: Number(v.n_paths),
 		seed: Number(v.seed),
 		...precisionRequest(v),
