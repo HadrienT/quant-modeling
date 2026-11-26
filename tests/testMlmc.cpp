@@ -18,6 +18,7 @@
 #include "quantModeling/models/equity/sabr_sim_model.hpp"
 #include "quantModeling/scripting/script_model_factory.hpp"
 
+#include <chrono>
 #include <cmath>
 #include <memory>
 #include <span>
@@ -966,6 +967,149 @@ namespace quantModeling
         const SimulationMCResult r = simulate_script(product, *m, s);
         EXPECT_EQ(r.device, "cpu");
         EXPECT_NE(r.diagnostics.find("multilevel QMC"), std::string::npos) << r.diagnostics;
+    }
+
+    // Issue #383: the adaptive run's level budget, its bias test decided on
+    // a resolved estimate, and its deadline.
+    namespace
+    {
+        /// A level whose estimate is its true mean shifted by `shock` of its
+        /// own standard errors, which fall as 1 / sqrt(points): a draw that
+        /// is lucky or unlucky at any size, the worst case for a test that
+        /// reads one estimate.
+        class FakeLevel final : public IQmcLevel
+        {
+          public:
+            FakeLevel(double truth, double sigma, double shock, double cost)
+                : truth_(truth), sigma_(sigma), shock_(shock), cost_(cost)
+            {
+            }
+            void add(long long n) override { points_ += n; }
+            long long points() const override { return points_; }
+            double cost() const override { return cost_; }
+            double mean() const override { return truth_ + shock_ * std::sqrt(estimator_variance()); }
+            double estimator_variance() const override
+            {
+                return sigma_ * sigma_ / static_cast<double>(points_);
+            }
+
+          private:
+            double truth_, sigma_, shock_, cost_;
+            long long points_ = 0;
+        };
+
+        /// Y_0 = 10, Y_l = -0.04 2^-l: with eps = 0.01 the bias test's
+        /// threshold, eps / sqrt(2), sits halfway (in log) between what
+        /// levels 2 and 3 leave, 0.01 and 0.005: first passed at level 3.
+        QmcLevelFactory weak_order_one(double shock, int capacity = 20)
+        {
+            return [=](int l) -> std::unique_ptr<IQmcLevel>
+            {
+                if (l > capacity)
+                    throw LevelBeyondCapacity("level " + std::to_string(l) + " is beyond the device");
+                const double truth = l == 0 ? 10.0 : -0.04 * std::pow(2.0, -l);
+                return std::make_unique<FakeLevel>(truth, l == 0 ? 1.0 : 0.05 * std::pow(2.0, -0.5 * l),
+                                                   l == 0 ? 0.0 : shock, std::pow(2.0, l));
+            };
+        }
+
+        MlqmcSettings fake_settings()
+        {
+            MlqmcSettings s;
+            s.eps = 0.01;
+            return s;
+        }
+    } // namespace
+
+    TEST(Mlmc, AnUnluckyOrLuckyCorrectionNeitherEscalatesNorStopsTheRun)
+    {
+        // Each correction one of its standard errors off, either way, at any
+        // number of points. The variance step alone leaves those errors as
+        // large as the test's threshold: read once, they escalated SPY's
+        // one-touch to the Sobol cap on one surface and stopped it at level
+        // 2 on the other.
+        for (const double shock : {-1.0, 0.0, 1.0})
+        {
+            const MlmcResult r = simulate_mlqmc_levels(weak_order_one(shock), fake_settings());
+            EXPECT_EQ(r.finest_level(), 3) << "shock " << shock << ": " << r.diagnostics;
+            EXPECT_TRUE(r.bias_converged) << r.diagnostics;
+            EXPECT_EQ(r.stop, MlmcStop::BiasTarget);
+            // The estimate the test read, and its error, are reported.
+            EXPECT_GT(r.bias_std_error, 0.0);
+            EXPECT_LE(r.bias_std_error, 0.5 * r.eps / std::sqrt(2.0)) << r.diagnostics;
+        }
+    }
+
+    TEST(Mlmc, TheRunStopsAtTheFinestLevelTheDeviceRuns)
+    {
+        // Level 3 is beyond the device: the run ends at level 2, its bias
+        // test unpassed and said so, instead of throwing and starting over
+        // elsewhere.
+        const MlmcResult r = simulate_mlqmc_levels(weak_order_one(0.0, 2), fake_settings());
+        EXPECT_EQ(r.finest_level(), 2) << r.diagnostics;
+        EXPECT_FALSE(r.bias_converged);
+        EXPECT_EQ(r.stop, MlmcStop::DeviceCapacity);
+        EXPECT_NEAR(r.bias, 0.01, 3.0 * r.bias_std_error) << r.diagnostics;
+        EXPECT_NE(r.diagnostics.find("beyond the device"), std::string::npos) << r.diagnostics;
+        // The first levels are the run itself: one the device cannot run
+        // there is still an error, for the caller's fallback.
+        EXPECT_THROW(simulate_mlqmc_levels(weak_order_one(0.0, 1), fake_settings()), LevelBeyondCapacity);
+    }
+
+    TEST(Mlmc, TheRunStopsAtItsDeadline)
+    {
+        MlqmcSettings s = fake_settings();
+        s.deadline = std::chrono::steady_clock::now();
+        const MlmcResult r = simulate_mlqmc_levels(weak_order_one(0.0), s);
+        EXPECT_EQ(r.finest_level(), s.min_finest_level);
+        EXPECT_FALSE(r.bias_converged);
+        EXPECT_EQ(r.stop, MlmcStop::TimeLimit);
+
+        // The CPU's pseudo-random MLMC too.
+        ScriptedProduct<Real> product(kCall, ctx());
+        auto m = make_script_model<Real>(local_vol(false));
+        MlmcSettings p;
+        p.eps = 1e-4; // hours of paths without the deadline
+        p.deadline = std::chrono::steady_clock::now();
+        const MlmcResult q = simulate_mlmc(product, *m, p);
+        EXPECT_EQ(q.finest_level(), p.min_finest_level);
+        EXPECT_EQ(q.stop, MlmcStop::TimeLimit);
+        EXPECT_NE(q.diagnostics.find("time limit"), std::string::npos) << q.diagnostics;
+    }
+
+    TEST(Mlmc, AlphaIsAtMostTheSchemesWeakOrder)
+    {
+        // Corrections falling as 4^-l are noise to Euler and Milstein, both
+        // of weak order 1: taken as alpha = 2, they divided the remaining
+        // bias by 3 and stopped the run early.
+        std::vector<MlmcLevel> levels(4);
+        for (std::size_t l = 0; l < levels.size(); ++l)
+        {
+            levels[l].n = 1000;
+            const double y = l == 0 ? 10.0 : std::pow(4.0, -static_cast<double>(l));
+            levels[l].sum = y * 1000.0;
+            levels[l].sum2 = 1000.0 * y * y * 1.0001; // a tiny variance: every mean resolved
+        }
+        EXPECT_DOUBLE_EQ(mlmc_detail::alpha_estimate(levels), 1.0);
+    }
+
+    TEST(Mlmc, ATimeLimitReachesTheScriptsMultilevelRoute)
+    {
+        // PricingSettings::mc_deadline, as price_script's time_limit sets it:
+        // the result carries the warning the user reads.
+        ScriptedProduct<Real> product(kCall, ctx());
+        auto m = make_script_model<Real>(local_vol(false));
+        PricingSettings s;
+        s.mc_mlmc_eps = 1e-4;
+        s.mc_seed = 5;
+        s.mc_device = ComputeDevice::Cpu;
+        s.mc_sampler = SamplerKind::Sobol; // multilevel QMC, which measures its bias's error
+        s.mc_deadline = std::chrono::steady_clock::now();
+        const SimulationMCResult r = simulate_script(product, *m, s);
+        EXPECT_NE(r.discretisation_bias_warning.find("time limit"), std::string::npos)
+            << r.discretisation_bias_warning << " | " << r.diagnostics;
+        ASSERT_TRUE(r.discretisation_bias_std_error.has_value());
+        EXPECT_GT(*r.discretisation_bias_std_error, 0.0);
     }
 
 } // namespace quantModeling

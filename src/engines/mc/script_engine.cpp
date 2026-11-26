@@ -326,9 +326,9 @@ namespace quantModeling
                 if (risks_ && dm.kind != DeviceModel::Kind::LocalVol)
                     throw InvalidInput("multilevel risks run under local vol (the GPU's per-path adjoint)");
                 if (m->sim_dim() > static_cast<std::size_t>(sobol_detail::kMaxDimension))
-                    throw InvalidInput("multilevel QMC: level " + std::to_string(level) + " needs " +
-                                       std::to_string(m->sim_dim()) + " draws per path, more than the " +
-                                       std::to_string(sobol_detail::kMaxDimension) + " Sobol dimensions");
+                    throw LevelBeyondCapacity("multilevel QMC: level " + std::to_string(level) + " needs " +
+                                              std::to_string(m->sim_dim()) + " draws per path, more than the " +
+                                              std::to_string(sobol_detail::kMaxDimension) + " Sobol dimensions");
                 const std::string why = gpu::script_gpu_unsupported(product_.program(), dm, mats_);
                 if (!why.empty())
                     throw InvalidInput(why);
@@ -381,6 +381,28 @@ namespace quantModeling
             int level_ = 0;
         };
 
+        /// What the user reads when a multilevel run stopped short of its
+        /// bias target (issue #383); empty when it reached it.
+        std::string mlmc_bias_warning(const MlmcResult &r)
+        {
+            if (r.bias_converged)
+                return {};
+            const std::string where =
+                r.stop == MlmcStop::TimeLimit
+                    ? "at its time limit"
+                    : "at level " + std::to_string(r.finest_level()) +
+                          (r.stop == MlmcStop::DeviceCapacity ? ", the finest its Sobol points reach"
+                                                              : ", the finest allowed");
+            std::ostringstream os;
+            os.precision(3);
+            os << "The multilevel run did not reach its time-step bias target: it stopped " << where
+               << ", with an estimated remaining bias of " << r.bias;
+            if (r.bias_std_error > 0.0)
+                os << " +- " << r.bias_std_error;
+            os << " against a target of " << r.eps / std::sqrt(2.0) << ".";
+            return os.str();
+        }
+
         /// Points per replicate a GPU level starts with: a launch has a
         /// fixed cost that 16 points (the CPU's start) would not repay.
         constexpr long long kGpuMlqmcInitialPoints = 1024;
@@ -406,6 +428,7 @@ namespace quantModeling
                 q.seed = seed;
                 q.owen = settings.mc_sobol_owen;
                 q.coarse_conditioning = settings.mc_mlmc_coarse_conditioning;
+                q.deadline = settings.mc_deadline;
                 // On the GPU when asked for and the device can take the
                 // script and the model (WP 26 P6); otherwise the CPU, saying
                 // why.
@@ -457,6 +480,7 @@ namespace quantModeling
                 s.eps = settings.mc_mlmc_eps;
                 s.seed = seed;
                 s.coarse_conditioning = settings.mc_mlmc_coarse_conditioning;
+                s.deadline = settings.mc_deadline;
                 if (settings.mc_mlmc_rel_eps > 0.0)
                 {
                     // A relative target needs the price's scale: level 0's.
@@ -470,6 +494,9 @@ namespace quantModeling
             res.values = {r.value};
             res.std_errors = {r.std_error};
             res.discretisation_bias = r.bias;
+            if (r.bias_std_error > 0.0)
+                res.discretisation_bias_std_error = r.bias_std_error;
+            res.discretisation_bias_warning = mlmc_bias_warning(r);
             res.n_paths = 0;
             for (const MlmcLevel &l : r.levels)
                 res.n_paths += l.n;
@@ -784,7 +811,9 @@ namespace quantModeling
     std::optional<AADSimulResults> simulate_script_aad_mlqmc_gpu(const ScriptedProduct<Real> &product,
                                                                  const ISimulationModel<Real> &model, double eps,
                                                                  double rel_eps, std::uint64_t seed,
-                                                                 std::string &why, int max_gpus)
+                                                                 std::string &why, int max_gpus,
+                                                                 std::optional<std::chrono::steady_clock::time_point>
+                                                                     deadline)
     {
         if (gpu::device_count() == 0)
         {
@@ -800,6 +829,7 @@ namespace quantModeling
         s.rel_eps = rel_eps;
         s.seed = seed;
         s.initial_points = kGpuMlqmcInitialPoints;
+        s.deadline = deadline;
         GpuQmcLevel::Note note;
         GpuQmcLevel::Risks risks;
         MlmcResult r;
@@ -825,6 +855,9 @@ namespace quantModeling
         res.price = r.value;
         res.price_std_error = r.std_error;
         res.discretisation_bias = r.bias;
+        if (r.bias_std_error > 0.0)
+            res.discretisation_bias_std_error = r.bias_std_error;
+        res.discretisation_bias_warning = mlmc_bias_warning(r);
         res.gpus = note.gpus;
         for (const MlmcLevel &l : r.levels)
             res.n_paths += l.n;

@@ -203,6 +203,12 @@ static py::list advice_to_py(const std::vector<quantModeling::scripting::Advice>
     return out;
 }
 
+/// A multilevel run that stopped short of its bias target (issue #383).
+static quantModeling::scripting::Advice bias_advice(const std::string &message)
+{
+    return {"discretisation_bias_target", "warning", message};
+}
+
 static py::dict price_script(const std::string &script, double spot, double rate,
                              double dividend, double vol,
                              const std::string &valuation_date,
@@ -239,9 +245,17 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              const std::vector<double> &curve_factor_basis,
                              const std::vector<std::string> &curve_factor_labels,
                              bool past_rights_unexercised, const std::string &variance_scheme,
-                             bool knock_outs_as_thresholds)
+                             bool knock_outs_as_thresholds, double time_limit)
 {
     using namespace quantModeling;
+    // When the route gives up (issue #383): a multilevel run stops there.
+    if (time_limit < 0.0)
+        throw InvalidInput("time_limit must be >= 0 (0: no limit)");
+    const std::optional<std::chrono::steady_clock::time_point> deadline =
+        time_limit > 0.0 ? std::optional(std::chrono::steady_clock::now() +
+                                         std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                                             std::chrono::duration<double>(time_limit)))
+                         : std::nullopt;
 
     const Date valuation = Date::from_iso(valuation_date);
     // Past events (on or before the valuation date) are replayed once against
@@ -449,7 +463,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
                     // The target as simulate_script's: a share of the price,
                     // floored at 1e-5 of the spot, or the absolute one.
                     const double floor = mlmc_eps > 0.0 ? mlmc_eps : 1e-5 * (spots.empty() ? spot : spots.front());
-                    aad_res = simulate_script_aad_mlqmc_gpu(product, *sim_model, floor, mlmc_rel_eps, seed_value, why);
+                    aad_res = simulate_script_aad_mlqmc_gpu(product, *sim_model, floor, mlmc_rel_eps, seed_value, why,
+                                                            0, deadline);
                     if (aad_res)
                     {
                         multilevel_done = true;
@@ -547,6 +562,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
             res.diagnostics += " | the adjoint run (its price and risks) steps the variance by Euler: QE's "
                                "branches have no pathwise derivative";
         py::dict out = pricing_result_to_dict(res);
+        if (!res.discretisation_bias_warning.empty())
+            aad_advice.push_back(bias_advice(res.discretisation_bias_warning));
         out["warnings"] = advice_to_py(aad_advice);
         // Second order (WP 27 §14.10): gamma, vanna and volga by the bump on
         // the GPU's adjoint, the method said next to them. The first-order
@@ -648,6 +665,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
             settings.mc_mlmc_eps = 1e-5 * (spots.empty() ? spot : spots.front());
         // ... and the plain run's discretisation bias.
         settings.mc_bias_estimate = bias_estimate;
+        settings.mc_deadline = deadline;
 
         // blueprint/wp/26-performance.md, P1e: the CPU run on several
         // threads, the same bits on any number of them (the default, as the
@@ -677,6 +695,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
     res.gpus = mc->gpus;
     res.discretisation_bias = mc->discretisation_bias;
     res.discretisation_bias_std_error = mc->discretisation_bias_std_error;
+    if (!mc->discretisation_bias_warning.empty())
+        advice.push_back(bias_advice(mc->discretisation_bias_warning));
     py::dict out = pricing_result_to_dict(res);
     out["warnings"] = advice_to_py(advice);
     out["historical_payments"] = historical_payments;
@@ -798,7 +818,7 @@ void register_scripting(py::module_ &m)
           py::arg("curve_factor_basis") = std::vector<double>{},
           py::arg("curve_factor_labels") = std::vector<std::string>{},
           py::arg("past_rights_unexercised") = false, py::arg("variance_scheme") = "euler",
-          py::arg("knock_outs_as_thresholds") = false,
+          py::arg("knock_outs_as_thresholds") = false, py::arg("time_limit") = 0.0,
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. terms_as_parameters: the script's numbers "
           "are a product's terms (a library product), read as data by the GPU's "

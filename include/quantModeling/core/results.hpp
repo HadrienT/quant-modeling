@@ -83,6 +83,8 @@ namespace quantModeling
         /// Its standard error, when measured (halved steps): a bias below
         /// about twice this is not resolved by the estimate.
         std::optional<Real> discretisation_bias_std_error;
+        /// As SimulationMCResult::discretisation_bias_warning.
+        std::string discretisation_bias_warning;
     };
 } // namespace quantModeling
 

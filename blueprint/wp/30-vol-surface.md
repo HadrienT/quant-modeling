@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | *In progress*. E1 (the eSSVI surface in the C++ core, its Dupire grid, the binding behind `surface_model="essvi"`) and E3 (market vega through the eSSVI calibration) done; E2 (the API's local-vol market on eSSVI) to do, issue #381 |
+| **Status** | *In progress*. E1 (the eSSVI surface in the C++ core, its Dupire grid, the binding behind `surface_model="essvi"`) and E3 (market vega through the eSSVI calibration) done; E2 (the API's local-vol market on eSSVI) to do, issue #381; its blocker, the multilevel escalation on the eSSVI one-touch (#383), is fixed (WP 26 §28) |
 | **Depends on** | WP 08 (stored option chains, quote cleaning), WP 16 (the local-vol and SLV script models that read the grid) |
 | **Issue** | #381 |
 

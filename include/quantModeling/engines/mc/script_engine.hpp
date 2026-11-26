@@ -1,6 +1,7 @@
 #ifndef QM_ENGINES_MC_SCRIPT_ENGINE_HPP
 #define QM_ENGINES_MC_SCRIPT_ENGINE_HPP
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -64,7 +65,9 @@ namespace quantModeling
     std::optional<AADSimulResults> simulate_script_aad_mlqmc_gpu(const ScriptedProduct<Real> &product,
                                                                  const ISimulationModel<Real> &model, double eps,
                                                                  double rel_eps, std::uint64_t seed,
-                                                                 std::string &why, int max_gpus = 0);
+                                                                 std::string &why, int max_gpus = 0,
+                                                                 std::optional<std::chrono::steady_clock::time_point>
+                                                                     deadline = std::nullopt);
 
     struct MlqmcSettings; // engines/mc/mlqmc.hpp
 

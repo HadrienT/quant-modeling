@@ -2542,7 +2542,7 @@ spread of the two runs' replicate-wise differences, the Sobol replicates
 being shared (common random numbers), or the two errors combined without
 replicates (an upper bound). The page shows a bias below twice its error as
 "not resolved, below ≈ 2σ", a bound rather than a number the estimate
-cannot back. The multilevel route's bias test carries no error yet.
+cannot back. The multilevel route's bias test carries its error since §28.
 
 **Not done here.** At 50 000 paths the page's time is mostly fixed costs
 (the chain read until the load registry exists, #332).
@@ -3159,3 +3159,39 @@ The 64 MB host staging buffer also cut the call into small launches.
 Every case gives the same bits, on the risk vectors' 17 digits. The call is now bound by the card: at 1M paths the adjoint kernel and its first two folds take about 330 ms.
 
 **Next on the adjoint (§25):** the draws the backward sweep recomputes (Philox and Φ⁻¹, about a third of the kernel).
+
+## 28. The multilevel run's level budget, resolved bias test and deadline (#383, 2026-11-26)
+
+**What happened.** On SPY's chain of 2026-11-25, `one-touch` under local vol at the default target (0.2 % of the price) ran for tens of minutes after its route had answered 408:
+1. The bias test read one estimate per level, each with an error about as large as the test's threshold (the variance step leaves sum V_l up to eps² / 2). On the eSSVI surface the run escalated level after level; on the SVI surface it stopped at level 2 by luck.
+2. alpha, regressed without weights over levels known to 7 % and to 40 %, fell to its floor of 0.5, where the remaining bias is |Y_L| / (√2 − 1), 2.4 |Y_L|.
+3. At level 6 the GPU needed 22,784 draws a path, more than the 21,201 Sobol dimensions. The exception threw the whole GPU run away; `device = "auto"` started again on the CPU, whose QMC met the same cap, then pseudo-random MLMC up to level 10.
+
+The trace of the eSSVI run (Y_l ± its standard error, one V100 pair):
+
+| Level | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| before | −0.074 ± 0.017 | −0.036 ± 0.013 | −0.036 ± 0.015 | −0.021 ± 0.011 | −0.018 ± 0.014 |
+| after | −0.062 ± 0.011 | −0.032 ± 0.009 | −0.016 ± 0.012 | −0.008 ± 0.004 | |
+
+**The changes** (`engines/mc/mlqmc.hpp`, `engines/mc/mlmc.hpp`):
+- **Level budget.** A level beyond the device's Sobol dimensions throws `LevelBeyondCapacity`. Past the first levels, the run stops at the finest level it could build (`MlmcStop::DeviceCapacity`), with its price, its bias and a warning, instead of failing over to another device. On the first levels it still throws, for the caller's fallback.
+- **The bias test decided on a resolved estimate.** The estimate now carries its standard error, that of the level it is read from, scaled alike (`MlmcResult::bias_std_error`, returned as `discretisation_bias_std_error`). While it is within two of those errors of the threshold, that level doubles its points, down to a quarter of the threshold (`kBiasResolution`).
+- **alpha weighted, and bounded by the weak order.** The regression of log2 |Y_l| on l weights each resolved level by the inverse variance of log2 |Y_l|, (Y_l ln 2 / s_l)². alpha is clamped to [0.5, 1]: 1 is the weak order of Euler and Milstein, and a faster decay can only be noise (alpha = 1.18 from levels 1 and 2 passed the test at level 2 while later levels still corrected). The CPU's pseudo-random MLMC uses the same estimate.
+- **Deadline.** `price_script(time_limit=…)`, which the API sets from `cancellation.engine_time_limit()` (what is left of the route's timeout): the MLQMC and MLMC loops stop there (`MlmcStop::TimeLimit`). A level being refined finishes first: on the CPU, 21.0 s for a 20 s limit.
+- **What the user reads.** A run that stops short of its target adds the warning `discretisation_bias_target`, with the remaining bias ± its error against the target.
+
+**Numbers** (the API's exact arguments, SPY 2026-11-25, `device = "auto"`, two V100s):
+
+| | Before | After |
+|---|---|---|
+| eSSVI one-touch | > 4 min (level 6 throws, CPU fallback) | **6.8 s**, levels 0..4, 21.918 ± 0.024, bias 0.011 ± 0.004 |
+| SVI one-touch | 4.6 s, levels 0..2, bias 0.031 | **0.8 s**, levels 0..2, 23.170 ± 0.030, bias 0.031 ± 0.008 |
+| eSSVI one-touch, CPU, 20 s limit | not bounded | 21.0 s, stopped at its limit, bias 0.104 ± 0.029, warned |
+
+The plain runs on one million paths (#383) put the eSSVI one-touch at 21.933 with 2,016 steps a year, so 21.918 sits within the target. The SVI run passes its test just under the threshold (0.031 for 0.033). The plain runs suggest its corrections do not yet halve between 504 and 2,016 steps a year (0.026, then 0.027), so its true remaining bias may be nearer 0.05. A window of three levels cannot see that; only more levels would.
+
+Tests:
+- `Mlmc.AnUnluckyOrLuckyCorrectionNeitherEscalatesNorStopsTheRun`: corrections one of their standard errors off at any number of points, either way, still stop at the right level.
+- `Mlmc.TheRunStopsAtTheFinestLevelTheDeviceRuns`, `Mlmc.TheRunStopsAtItsDeadline` (MLQMC and CPU MLMC), `Mlmc.AlphaIsAtMostTheSchemesWeakOrder`, `Mlmc.ATimeLimitReachesTheScriptsMultilevelRoute`.
+- `api/tests/test_mlmc_time_limit.py`: the library's one-touch on a skewed surface stops at its time limit and says so; the route hands the engine the time it has left.

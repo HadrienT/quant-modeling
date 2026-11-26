@@ -1,7 +1,9 @@
 #ifndef PRICERS_CONTEXT_HPP
 #define PRICERS_CONTEXT_HPP
 
+#include <chrono>
 #include <memory>
+#include <optional>
 
 #include "quantModeling/core/results.hpp"
 #include "quantModeling/models/base.hpp"
@@ -157,6 +159,10 @@ namespace quantModeling
         /// exactly between the product's dates. Off by default so that no
         /// existing number moves.
         bool mc_bias_estimate = false;
+        /// When the caller stops waiting (issue #383): a multilevel run
+        /// stops there, its bias target unreached and said so. Unset: no
+        /// limit.
+        std::optional<std::chrono::steady_clock::time_point> mc_deadline;
     };
 
     struct MarketView

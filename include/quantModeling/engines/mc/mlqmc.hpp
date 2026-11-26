@@ -30,7 +30,9 @@
  * variance over R. N_l, the points per replicate, starts at a power of two
  * and doubles on the level whose variance per unit of cost falls most:
  * largest V_l / (C_l N_l) (Giles & Waterhouse 2009, §3), until sum V_l <=
- * eps^2 / 2; the bias test and the levels added are P4's.
+ * eps^2 / 2; the bias test and the levels added are P4's, the test decided
+ * on an estimate resolved against its own error, the levels bounded by what
+ * the device runs and by a deadline (issue #383, WP 26 §28).
  */
 namespace quantModeling
 {
@@ -51,6 +53,7 @@ namespace quantModeling
         std::uint64_t seed = 1;
         bool owen = false;               ///< Owen's hash-based scrambling instead of the digital shift
         bool coarse_conditioning = true; ///< as MlmcSettings::coarse_conditioning (WP 26 §26)
+        MlmcDeadline deadline;           ///< as MlmcSettings::deadline
     };
 
     /// One level of a multilevel QMC run, wherever its points are priced:
@@ -104,9 +107,9 @@ namespace quantModeling
                     auto rep = std::make_unique<Replicate>(product, model, level, s.seed, s.coarse_conditioning);
                     const std::size_t dim = rep->sampler.draws().size();
                     if (dim > static_cast<std::size_t>(sobol_detail::kMaxDimension))
-                        throw InvalidInput("multilevel QMC: level " + std::to_string(level) + " needs " +
-                                           std::to_string(dim) + " draws per path, more than the " +
-                                           std::to_string(sobol_detail::kMaxDimension) + " Sobol dimensions");
+                        throw LevelBeyondCapacity("multilevel QMC: level " + std::to_string(level) + " needs " +
+                                                  std::to_string(dim) + " draws per path, more than the " +
+                                                  std::to_string(sobol_detail::kMaxDimension) + " Sobol dimensions");
                     // Independent across levels and replicates.
                     const std::uint64_t key = (s.seed << 32) ^ (static_cast<std::uint64_t>(level) << 16) ^
                                               static_cast<std::uint64_t>(r);
@@ -195,14 +198,48 @@ namespace quantModeling
         };
 
         /// alpha over the levels from 1 whose mean is resolved (|mean| > 2
-        /// standard errors of the level's estimate), as mlmc_detail.
+        /// standard errors of the level's estimate), in [0.5, 1], as
+        /// mlmc_detail.
         inline double alpha_estimate(const std::vector<std::unique_ptr<IQmcLevel>> &levels)
         {
-            std::vector<double> m(levels.size(), 0.0);
+            std::vector<double> m(levels.size(), 0.0), se(levels.size(), 0.0);
             for (std::size_t l = 1; l < levels.size(); ++l)
-                if (std::fabs(levels[l]->mean()) > 2.0 * std::sqrt(levels[l]->estimator_variance()))
-                    m[l] = std::fabs(levels[l]->mean());
-            return std::max(0.5, -mlmc_detail::log2_slope(m, -1.0));
+            {
+                m[l] = levels[l]->mean();
+                se[l] = std::sqrt(levels[l]->estimator_variance());
+            }
+            return std::clamp(mlmc_detail::weighted_alpha(m, se, 1.0), 0.5, 1.0);
+        }
+
+        /// The bias test's estimate is resolved when its standard error is
+        /// at most this share of the test's threshold (issue #383).
+        constexpr double kBiasResolution = 0.25;
+
+        struct BiasEstimate
+        {
+            double bias = 0.0;
+            double std_error = 0.0;
+            std::size_t level = 0; ///< the level the estimate comes from
+        };
+
+        /// mlmc_detail::remaining_bias, with the standard error of the
+        /// level it comes from scaled alike.
+        inline BiasEstimate remaining_bias(const std::vector<std::unique_ptr<IQmcLevel>> &levels, double alpha)
+        {
+            const double r = std::pow(2.0, alpha);
+            const std::size_t L = levels.size() - 1;
+            BiasEstimate out;
+            double worst = -1.0, scale = 1.0;
+            for (std::size_t back = 0; back <= 2 && back < L; ++back)
+            {
+                const double k = 1.0 / std::pow(r, static_cast<double>(back));
+                const double x = std::fabs(levels[L - back]->mean()) * k;
+                if (x > worst)
+                    worst = x, scale = k, out.level = L - back;
+            }
+            out.bias = worst / (r - 1.0);
+            out.std_error = std::sqrt(levels[out.level]->estimator_variance()) * scale / (r - 1.0);
+            return out;
         }
     } // namespace mlqmc_detail
 
@@ -250,6 +287,13 @@ namespace quantModeling
         };
 
         MlmcResult res;
+        auto stop = [&](MlmcStop kind, std::string why)
+        {
+            res.bias_converged = false;
+            res.stop = kind;
+            res.stop_reason = std::move(why);
+        };
+        mlqmc_detail::BiasEstimate bias;
         for (;;)
         {
             // Variance: double the points of the level whose variance per
@@ -267,27 +311,57 @@ namespace quantModeling
                         best = score, arg = l;
                 }
                 const double eps = target();
-                if (total <= 0.5 * eps * eps)
+                if (total <= 0.5 * eps * eps || past(s.deadline))
                     break;
                 levels[arg]->add(levels[arg]->points());
             }
 
-            // Bias: P4's test on the last two levels.
-            const std::size_t L = levels.size() - 1;
-            const double alpha = mlqmc_detail::alpha_estimate(levels);
-            std::vector<double> m;
-            for (const auto &lv : levels)
-                m.push_back(std::fabs(lv->mean()));
-            res.bias = mlmc_detail::remaining_bias(m, alpha);
-            if (res.bias <= target() / std::sqrt(2.0))
-                break;
-            if (static_cast<int>(L) >= s.max_finest_level)
+            // Bias: P4's test over the last levels, decided on a resolved
+            // estimate (issue #383). The variance step leaves each level's
+            // error up to eps / sqrt(2), the test's own threshold: one noisy
+            // Y_L stopped SPY's one-touch at level 2 by luck on one surface
+            // and escalated it to the Sobol cap on the other. While the
+            // estimate is within two of its standard errors of the threshold,
+            // the level it comes from doubles its points, down to a quarter
+            // of the threshold.
+            for (;;)
             {
-                res.bias_converged = false;
+                bias = mlqmc_detail::remaining_bias(levels, mlqmc_detail::alpha_estimate(levels));
+                const double thr = target() / std::sqrt(2.0);
+                if (bias.std_error <= mlqmc_detail::kBiasResolution * thr ||
+                    std::fabs(bias.bias - thr) >= 2.0 * bias.std_error || past(s.deadline))
+                    break;
+                levels[bias.level]->add(levels[bias.level]->points());
+            }
+            if (bias.bias <= target() / std::sqrt(2.0))
+                break;
+            if (past(s.deadline))
+            {
+                stop(MlmcStop::TimeLimit, "stopped at its time limit");
                 break;
             }
-            add_level();
+            const int L = static_cast<int>(levels.size()) - 1;
+            if (L >= s.max_finest_level)
+            {
+                stop(MlmcStop::FinestAllowed, "at the finest level allowed (" + std::to_string(L) + ")");
+                break;
+            }
+            // A level the device cannot run ends the run at the finest one
+            // it can (issue #383): falling back to another device restarted
+            // from level 0 and refined on the CPU long after the route's
+            // timeout.
+            try
+            {
+                add_level();
+            }
+            catch (const LevelBeyondCapacity &e)
+            {
+                stop(MlmcStop::DeviceCapacity, "at the finest level the device runs (" + std::to_string(L) + "): " + e.what());
+                break;
+            }
         }
+        res.bias = bias.bias;
+        res.bias_std_error = bias.std_error;
 
         res.value = 0.0;
         double var = 0.0;
@@ -319,7 +393,7 @@ namespace quantModeling
             os << ' ' << lv->points();
         os << "; alpha " << res.alpha << ", beta " << res.beta << ", gamma " << res.gamma;
         if (!res.bias_converged)
-            os << "; bias test failed at the finest level allowed (" << res.bias << ")";
+            os << "; bias test failed (" << res.bias << " +- " << res.bias_std_error << "): " << res.stop_reason;
         res.diagnostics = os.str();
         return res;
     }
