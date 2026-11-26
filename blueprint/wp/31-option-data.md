@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | *In progress*: decisions D1, D2, D3, D5 taken on 2026-11-26 (§10). The `data-ingest` lots L1–L4 and L8 are done (data-ingest #32, #33, issue data-ingest #31); what they measured, and where they depart from this design, is in §4.7. L0 done, D4 decided (§6.1, §10). L5 done (§5.8, PR #388); the live Yahoo fallbacks removed. L6 done (§5.9, PR #390), the term structure for every model moved to WP 32 (#389). L7 to do. Issue #386 |
+| **Status** | *In progress*: decisions D1, D2, D3, D5 taken on 2026-11-26 (§10). The `data-ingest` lots L1–L4 and L8 are done (data-ingest #32, #33, issue data-ingest #31); what they measured, and where they depart from this design, is in §4.7. L0 done, D4 decided (§6.1, §10). L5 done (§5.8, PR #388); the live Yahoo fallbacks removed. L6 done (§5.9, PR #390), the term structure for every model moved to WP 32 (#389). L7 measured (§5.10): the switch to `chain_iv` is supported on every reference; E2 waits for the eSSVI local vol to reprice its own surface (WP 30). The switch is the maintainer's decision. Issue #386 |
 | **Depends on** | WP 08 (stored option chains, `RawVolSurface` cleaning), WP 30 (the eSSVI surface that consumes the quotes) |
 | **Unlocks** | WP 30 E2 (the API on eSSVI, #381): its measured price moves mean nothing until the quotes are right |
 | **Repositories** | `~/data-ingest` (ingestion, the new derived table) and this one (the consumer, the reduced cleaning) |
@@ -250,6 +250,38 @@ Code: `api/app/chain_iv.py` (flags, the zero-bid stop, D2's carrying), `market_s
 - **Legacy, bit for bit.** Four SPY products (local-vol and Black-Scholes calls, a local-vol digital, the analytic call) give the same price and standard error, to the bit, on `main` and on this lot.
 - **Not in this lot.** The multi-asset path keeps its stored yields per asset (`multi_asset_market`). The product pages still require a rate (their zod schema); the scripting page accepts an empty one. The page defaults change with the switch.
 
+### 5.10 L7: the #384 measurement rerun against the market (2026-11-26)
+
+SPY, market date 2026-11-26 (the 25th's session), the library's one-year products (T = 0.9993), 100k paths, seed 7. Three configurations: SVI on `legacy` at r = 4 % (the page's default; stored yield 0.79 %); SVI and eSSVI on `chain_iv` at the market's carry (rate 5.00 %, carry 3.78 %, yield 1.22 %, F = 744.31). eSSVI is forced in the measurement script (`surface_model="essvi"`); the API does not send it yet (E2).
+
+**The market**, on SPX's European quotes (`options.chain_iv`, the stop rule applied), interpolated in T between 2027-11-19 and 2027-12-17:
+- fair variance by the VIX strip: 0.0624 (25.0 %) on every quoted strike, 0.0538 (23.2 %) on strikes above half the forward; across the eight expiries from 0.6 to 1.2 years the full strip runs from 0.0595 to 0.0656, set by how deep each expiry's puts are quoted;
+- P(S_T < S0) by the put slope: 0.337;
+- the put struck at S0: 45.89 (on SPY's market forward and SPX's discount).
+
+**The surfaces themselves**, integrated (no Monte Carlo):
+
+| | market | SVI, legacy | SVI, chain_iv | eSSVI, chain_iv |
+|---|---|---|---|---|
+| fair variance, k from −3 | 0.0624 | **0.742** (the wing diverges) | 0.0588 | 0.0597 |
+| fair variance, K/F ≥ 0.5 | 0.0538 | 0.0559 | 0.0524 | **0.0538** |
+| P(S_T < S0) | 0.337 | 0.370 | **0.336** | 0.330 |
+| put at S0 / (DF F) | 0.06482 | 0.06096 (−6.0 %) | 0.06400 (−1.3 %) | **0.06486 (+0.1 %)** |
+
+**The models** (Monte Carlo standard errors: below 0.0001 on the variance, 0.001 on the probability, 0.11 on the put):
+
+| | fair variance | P(S_T < S0) | put at S0 |
+|---|---|---|---|
+| market | 0.054–0.062 | 0.337 | 45.89 |
+| legacy SVI: local vol / Heston / SLV | 0.0507 / 0.0493 / 0.0544 | 0.372 / 0.348 / 0.366 | −5.8 % / −6.8 % / −7.9 % |
+| chain_iv SVI | 0.0581 / 0.0578 / 0.0598 | 0.339 / 0.328 / 0.340 | −1.3 % / −3.4 % / −2.2 % |
+| chain_iv eSSVI | 0.0493 / 0.0602 / 0.0499 | 0.353 / 0.339 / 0.353 | −3.5 % / −0.1 % / −4.7 % |
+
+What it says:
+- **The data switch is right on every reference.** Moving from `legacy` to `chain_iv`, on SVI: the put error goes from −6 to −8 % to −1 to −3 %, the digital from 0.35–0.37 to 0.33–0.34 against 0.337, the variance swap from 0.049–0.054 to 0.058–0.060, inside the market's range. The −52 % and +13 % moves of #384 compared two surfaces built on Yahoo's IVs; they say nothing about eSSVI.
+- **eSSVI is the best surface and not yet the best local vol.** It reprices the market's put at S0 and its fair variance above 50 % exactly, and Heston calibrated on it is the closest model of the table. But the local vol built from it misprices that same put by −3.5 % (SLV −4.7 %), and its variance swap drops to 0.049 against the surface's own 0.0597: the Dupire step from the eSSVI surface loses what the surface holds, most of it in the wings (a grid flat past its band would do this). On SVI, the local vol stays within 1.3 % of the put.
+- So E2 needs the eSSVI local vol to reprice its own surface first: a vanilla of every pillar within its Monte Carlo error, and the variance swap within the surface's band. That is a WP 30 lot, not a data question.
+
 ## 6. Review of the filters used so far (`CleaningParams`, `RawVolSurface`)
 
 Each filter of the current pipeline, what it does, what is wrong with it, what the literature does, and what to do. The literature column is to be completed by L0 (§7). The rows cited there come from what L0 has already read.
@@ -373,7 +405,7 @@ On every stored day, and as the acceptance of L2/L3/L5:
 | L4 | `data-ingest` | Backfill of every stored day; method version | **Done** (data-ingest #33): `ingest run options-chain-iv --full`; counts per day logged |
 | L5 | this one | `market_snapshot` and `RawVolSurface` on `chain_iv`, stored forwards; S&P 500 products on the XSP/SPX surface, SPY's as a cross-check (D2); filters as §6 decides; the other consumers (§5.6) | **Done** (PR #388, §5.8): median miss within 2 half-spreads; SPY's cross-check within 0.5 pt beyond 6 months, about 1 pt under 3 months (open, §5.8) |
 | L6 | this one | The pricers' forward (D1): market forwards and discounts per maturity, `rate` as an override (API field, Pricing page label); `QM_OPTION_DATA` switch (D5) | **Done** (PR #390, §5.9): flat carry per product at its horizon, the term structure in WP 32; a forward reprices on the market's under every model; `legacy` bit for bit against `main` |
-| L7 | this one | The #384 measurement rerun (§8) and the maintainer's decision on E2 (#381) | table presented; WP 30 status updated |
+| L7 | this one | The #384 measurement rerun (§8) and the maintainer's decision on E2 (#381) | **Measured** (§5.10): `chain_iv` closer to the market on every reference; eSSVI's local vol loses 3.5 % on the ATM put; decisions pending |
 | L8 | both | Documentation: `options_chain.py`'s docstring, `docs/sources.md` (`data-ingest`), this file's status | `data-ingest` side and this file done; quant-modeling's own docs with L5 |
 
 Order: L0 first, then L1 → L2 → L3 → L4 → L5 → L6 → L7. L1 and L2 on SPX/XSP do not wait for L3. L5 can start on the European tickers alone.

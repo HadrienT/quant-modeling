@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | *In progress*. E1 (the eSSVI surface in the C++ core, its Dupire grid, the binding behind `surface_model="essvi"`) and E3 (market vega through the eSSVI calibration) done; E2 (the API's local-vol market on eSSVI) to do, issue #381 |
+| **Status** | *In progress*. E1 (the eSSVI surface in the C++ core, its Dupire grid, the binding behind `surface_model="essvi"`) and E3 (market vega through the eSSVI calibration) done. E2 (the API's local-vol market on eSSVI) waits: on clean data (WP 31 §5.10) the eSSVI surface reprices the market, but the local vol built from it misprices the one-year ATM put by −3.5 % and cuts the variance swap from the surface's 0.0597 to 0.049; the Dupire step from eSSVI has to reprice its own surface first. Issue #381 |
 | **Depends on** | WP 08 (stored option chains, quote cleaning), WP 16 (the local-vol and SLV script models that read the grid) |
 | **Issue** | #381 |
 
