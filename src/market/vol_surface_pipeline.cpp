@@ -169,20 +169,27 @@ namespace quantModeling
                     ttms.push_back(reports[i].ttm);
                 }
             const std::vector<ESSVISliceFit> fits = calibrate_essvi_slices(slice_quotes, ttms, essvi);
+            const std::vector<bool> pillar = essvi_surface_pillars(fits, essvi.surface_min_relative_gap);
             Real lo = std::numeric_limits<Real>::infinity(), hi = -std::numeric_limits<Real>::infinity();
             std::size_t feasible = 0;
+            std::vector<ESSVISliceFit> pillars;
             for (std::size_t s = 0; s < fits.size(); ++s)
             {
                 if (!fits[s].feasible)
                     continue;
                 ++feasible;
                 VolSurfaceSliceReport &r = reports[idx[s]];
-                r.in_surface = true;
+                // Every feasible slice reports its eSSVI fit; the pillars alone
+                // build the surface (essvi_surface_pillars).
                 r.params = essvi_to_svi(fits[s].params);
                 r.rmse = fits[s].rmse;
                 r.worst_residual = fits[s].worst_residual;
                 r.converged = true;
                 r.butterfly_arbitrage_free = true;
+                if (!pillar[s])
+                    continue;
+                pillars.push_back(fits[s]);
+                r.in_surface = true;
                 lo = std::min(lo, r.band.lo);
                 hi = std::max(hi, r.band.hi);
             }
@@ -190,7 +197,7 @@ namespace quantModeling
                 throw InvalidInput("calibrate_vol_surface: no maturity admits an arbitrage-free eSSVI slice");
             if (hi > lo)
                 k_min = lo, k_max = hi;
-            const ESSVISurface surface(fits);
+            const ESSVISurface surface(std::move(pillars));
             GridLocalVol grid =
                 build_local_vol_grid(surface, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities, dupire_params);
             VolSurfacePipelineResult result;

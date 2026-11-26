@@ -55,11 +55,17 @@ chains, dividend yields, FRED curves, ICE BofA credit spreads, XBRL facts from S
 FX options published by DTCC, historical default rates by rating published by ESMA). **Any
 new data path goes through the database, with no fallback to Yahoo Finance**: data that is
 absent or too old there is an explicit error (script pricing paths go through
-`api/app/market_snapshot.py`, which does not import `yfinance`). The live fallbacks
-**already in place** in the older endpoints (`vol_surface.py`,
-`routers/local_vol_pricing.py`, `routers/simulation.py`) are **kept on purpose**, so as not
-to break the API while `data-ingest` is not reliable: do not extend them, do not remove
-them without a decision from the maintainer. The `notebooks/` directory is a personal
+`api/app/market_snapshot.py`, which does not import `yfinance`). The live Yahoo fallbacks
+the older endpoints had (`vol_surface.py`, `routers/local_vol_pricing.py`, `routers/simulation.py`)
+were **removed by the maintainer on 2026-11-26** (WP 31: Yahoo's data is not trusted); the API
+no longer depends on `yfinance` and a test checks that importing it never loads it. Option
+surfaces come from `market_snapshot`, whose source `QM_OPTION_DATA` chooses: `chain_iv`
+(`options.chain_iv`, the quotes `data-ingest` cleans at ingestion; production's default since
+2026-11-26, set in `docker-compose.prod.yml`) or `legacy` (`options.chain_snapshot`, Yahoo's IVs;
+the code's default, for dev and tests, and the rollback). Under `chain_iv` a product is priced on
+the market's carry at its maturity and an empty `rate` means the market's (WP 31 L6). The implied-vol
+surface is `QM_VOL_SURFACE`: `essvi` in production (WP 30 E2, E4), `svi` the code's default and
+the rollback. The `notebooks/` directory is a personal
 sandbox, out of scope. No more BigQuery: the project is entirely off cloud.
 
 ## Scripting assistant

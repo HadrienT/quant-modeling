@@ -11,6 +11,9 @@ export const f = {
 	maturity: () =>
 		z.coerce.number().positive("Maturity must be positive").max(50),
 	ratePct: () => z.coerce.number().min(-20).max(50),
+	/** A rate the market supplies when left empty (WP 31 L6): "" or a percent. */
+	ratePctOrMarket: () =>
+		z.union([z.literal(""), z.coerce.number().min(-20).max(50)]),
 	dividendPct: () => z.coerce.number().min(-20).max(50),
 	volPct: () =>
 		z.coerce.number().positive("Volatility must be positive").max(500),

@@ -2,7 +2,7 @@
 Router — Local-volatility pricing endpoints.
 
 Pipeline:
-  1. Fetch raw option chain   (vol_surface.py: stored snapshot, else live yfinance)
+  1. Stored option chain      (market_snapshot: the database only, QM_OPTION_DATA)
   2. Clean + calibrate SVI    (C++: quantmodeling.calibrate_vol_surface)
   3. Dupire local-vol grid    (C++: same call)
   4. Monte-Carlo price        (C++: quantmodeling.price_local_vol_mc)
@@ -16,10 +16,13 @@ GET  /local-vol/delta-surface
 
 from __future__ import annotations
 
+from datetime import date
+from typing import Optional
+
 import quantmodeling as qm
 from fastapi import APIRouter, HTTPException, Query
 
-from .. import vol_surface
+from .. import market_snapshot, vol_surface
 from ..logging_utils import get_logger
 from ..schemas import (
     CleanedIVSurfaceResponse,
@@ -44,66 +47,34 @@ def _cleaning_summary(stats: dict) -> str:
     )
 
 
-def _calibrate(
-    ticker: str,
-    rate: float,
-    min_open_interest: int,
-    min_bid: float,
-    max_spread_ratio: float,
-    min_moneyness: float,
-    max_moneyness: float,
-    k_min: float = -0.6,
-    k_max: float = 0.6,
-    n_strikes: int = 100,
-    n_maturities: int = 50,
-) -> tuple:
-    """Fetch + calibrate. Returns (ticker, spot, dividend, result_dict)."""
+#: The rate the local-vol routes used when none is given, kept under legacy.
+LEGACY_DEFAULT_RATE = 0.05
+
+
+def _calibrate(ticker: str, rate: Optional[float]) -> tuple:
+    """The stored surface of `ticker` (market_snapshot: the database only,
+    no live source; the option data QM_OPTION_DATA names). Returns (ticker,
+    spot, dividend, result) with result shaped as calibrate_vol_surface's."""
     ticker = ticker.upper().strip()
-    spot = vol_surface.get_spot(ticker)
-    dividend = vol_surface.get_dividend_yield(ticker)
-
+    if rate is None and market_snapshot.option_data() == "legacy":
+        rate = LEGACY_DEFAULT_RATE
     try:
-        raw_quotes = vol_surface.fetch_option_chain(ticker)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    if not raw_quotes:
-        raise HTTPException(
-            status_code=404, detail=f"No option chain available for '{ticker}'."
-        )
-
-    logger.info(
-        "local-vol: ticker=%s spot=%.2f dividend=%.4f rate=%.4f n_raw=%d",
-        ticker,
-        spot,
-        dividend,
-        rate,
-        len(raw_quotes),
-    )
-
-    cleaning_params = qm.CleaningParams()
-    cleaning_params.min_open_interest = min_open_interest
-    cleaning_params.min_bid = min_bid
-    cleaning_params.max_spread_ratio = max_spread_ratio
-    cleaning_params.min_moneyness = min_moneyness
-    cleaning_params.max_moneyness = max_moneyness
-
-    try:
-        result = qm.calibrate_vol_surface(
-            raw_quotes,
-            spot,
-            rate,
-            dividend,
-            k_min,
-            k_max,
-            n_strikes,
-            n_maturities,
-            cleaning_params=cleaning_params,
-        )
-    except RuntimeError as exc:
+        m = market_snapshot.local_vol_market(ticker, rate, date.today())
+    except market_snapshot.MarketDataUnavailable as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    return ticker, spot, dividend, result
+    except RuntimeError as exc:  # the native calibration refused the chain
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    result = {
+        "slices": m.svi_slices,
+        "K_grid": m.K_grid,
+        "T_grid": m.T_grid,
+        "sigma_loc_flat": m.sigma_loc_flat,
+        "k_min": m.k_min,
+        "k_max": m.k_max,
+        "cleaning_stats": m.cleaning_stats,
+        "rate": m.rate,  # the rate given, or the market's (chain_iv)
+    }
+    return ticker, m.spot, m.dividend, result
 
 
 @router.get("/price", response_model=LocalVolResponse)
@@ -112,7 +83,11 @@ def price_local_vol(
     strike: float = Query(..., gt=0, description="Option strike price"),
     maturity: float = Query(..., gt=0, description="Time to maturity in years"),
     is_call: bool = Query(True, description="True for call, False for put"),
-    rate: float = Query(0.05, description="Continuously compounded risk-free rate"),
+    rate: Optional[float] = Query(
+        None,
+        description="Override of the market's discount rate (continuously "
+        "compounded). Empty: the market's (QM_OPTION_DATA=chain_iv), or 5 % under legacy.",
+    ),
     n_paths: int = Query(
         50_000, ge=1000, le=500_000, description="MC simulation paths"
     ),
@@ -121,32 +96,19 @@ def price_local_vol(
     ),
     seed: int = Query(1, description="RNG seed"),
     compute_greeks: bool = Query(True, description="Compute finite-difference greeks"),
-    min_open_interest: int = Query(10, ge=1),
-    min_bid: float = Query(0.05, ge=0.0),
-    max_spread_ratio: float = Query(0.50, gt=0.0, le=1.0),
-    min_moneyness: float = Query(0.70, gt=0.0),
-    max_moneyness: float = Query(1.40, gt=0.0),
 ) -> LocalVolResponse:
     """
     Price a European vanilla option using a Dupire local-volatility surface
     calibrated from the ticker's option chain: clean -> SVI per maturity ->
     Dupire (Gatheral closed form) -> Euler-Maruyama Monte Carlo.
     """
-    ticker, spot, dividend, result = _calibrate(
-        ticker,
-        rate,
-        min_open_interest,
-        min_bid,
-        max_spread_ratio,
-        min_moneyness,
-        max_moneyness,
-    )
+    ticker, spot, dividend, result = _calibrate(ticker, rate)
 
     mc_input = qm.LocalVolInput()
     mc_input.spot = spot
     mc_input.strike = strike
     mc_input.maturity = maturity
-    mc_input.rate = rate
+    mc_input.rate = result["rate"]
     mc_input.dividend = dividend
     mc_input.is_call = is_call
     mc_input.K_grid = result["K_grid"]
@@ -194,16 +156,14 @@ def raw_iv_surface(
     """The listed option chain's implied vols, gridded on the strikes and
     maturities actually traded -- no cleaning, no fitting, no
     interpolation. See vol_surface.raw_iv_grid."""
-    ticker = ticker.upper().strip()
-    spot = vol_surface.get_spot(ticker)
-
     try:
-        raw_quotes = vol_surface.fetch_option_chain(ticker)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raw_quotes, spot, _ = market_snapshot.stored_chain(ticker, date.today())
+    except market_snapshot.MarketDataUnavailable as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    ticker = ticker.upper().strip()
     if not raw_quotes:
         raise HTTPException(
-            status_code=404, detail=f"No option chain available for '{ticker}'."
+            status_code=404, detail=f"No stored option chain for '{ticker}'."
         )
 
     strikes, maturities, values = vol_surface.raw_iv_grid(raw_quotes)
@@ -238,26 +198,17 @@ def raw_iv_surface(
 @router.get("/delta-surface", response_model=DeltaSurfaceResponse)
 def delta_surface(
     ticker: str = Query(..., description="Stock ticker"),
-    rate: float = Query(0.05, description="Risk-free rate"),
-    min_open_interest: int = Query(10, ge=1),
-    min_bid: float = Query(0.05, ge=0.0),
-    max_spread_ratio: float = Query(0.50, gt=0.0, le=1.0),
-    min_moneyness: float = Query(0.70, gt=0.0),
-    max_moneyness: float = Query(1.40, gt=0.0),
+    rate: Optional[float] = Query(
+        None,
+        description="Override of the market's discount rate. Empty: the market's "
+        "(QM_OPTION_DATA=chain_iv), or 5 % under legacy.",
+    ),
 ) -> DeltaSurfaceResponse:
     """Every calibrated SVI slice, reduced to its desk-standard delta
     buckets (vol_surface.delta_bucket_row) -- reuses the same calibration
     /local-vol/iv-surface and /local-vol/surface already run, just a
     different, more desk-familiar reduction of it."""
-    ticker, spot, dividend, result = _calibrate(
-        ticker,
-        rate,
-        min_open_interest,
-        min_bid,
-        max_spread_ratio,
-        min_moneyness,
-        max_moneyness,
-    )
+    ticker, spot, dividend, result = _calibrate(ticker, rate)
     stats = result["cleaning_stats"]
 
     rows = [
@@ -282,12 +233,11 @@ def delta_surface(
 @router.get("/iv-surface", response_model=CleanedIVSurfaceResponse)
 def cleaned_iv_surface(
     ticker: str = Query(..., description="Stock ticker"),
-    rate: float = Query(0.05, description="Risk-free rate"),
-    min_open_interest: int = Query(10, ge=1),
-    min_bid: float = Query(0.05, ge=0.0),
-    max_spread_ratio: float = Query(0.50, gt=0.0, le=1.0),
-    min_moneyness: float = Query(0.70, gt=0.0),
-    max_moneyness: float = Query(1.40, gt=0.0),
+    rate: Optional[float] = Query(
+        None,
+        description="Override of the market's discount rate. Empty: the market's "
+        "(QM_OPTION_DATA=chain_iv), or 5 % under legacy.",
+    ),
 ) -> CleanedIVSurfaceResponse:
     """
     The SVI-fitted implied-volatility surface, one calibrated slice per
@@ -298,15 +248,7 @@ def cleaned_iv_surface(
     surfaced once the front-end calibration-report screen exists per
     blueprint/wp/15-future-quant-surfaces.md §1).
     """
-    ticker, spot, dividend, result = _calibrate(
-        ticker,
-        rate,
-        min_open_interest,
-        min_bid,
-        max_spread_ratio,
-        min_moneyness,
-        max_moneyness,
-    )
+    ticker, spot, dividend, result = _calibrate(ticker, rate)
     stats = result["cleaning_stats"]
 
     # Reuse the exact log-moneyness range calibrate_vol_surface actually used
@@ -316,7 +258,7 @@ def cleaned_iv_surface(
     strikes, maturities, values = vol_surface.svi_implied_vol_grid(
         result["slices"],
         spot,
-        rate,
+        result["rate"],
         dividend,
         k_min=result["k_min"],
         k_max=result["k_max"],
@@ -341,25 +283,16 @@ def cleaned_iv_surface(
 @router.get("/surface", response_model=LocalVolSurfaceResponse)
 def local_vol_surface(
     ticker: str = Query(..., description="Stock ticker"),
-    rate: float = Query(0.05, description="Risk-free rate"),
-    min_open_interest: int = Query(10, ge=1),
-    min_bid: float = Query(0.05, ge=0.0),
-    max_spread_ratio: float = Query(0.50, gt=0.0, le=1.0),
-    min_moneyness: float = Query(0.70, gt=0.0),
-    max_moneyness: float = Query(1.40, gt=0.0),
+    rate: Optional[float] = Query(
+        None,
+        description="Override of the market's discount rate. Empty: the market's "
+        "(QM_OPTION_DATA=chain_iv), or 5 % under legacy.",
+    ),
 ) -> LocalVolSurfaceResponse:
     """The Dupire local-volatility surface, computed analytically from the
     calibrated SVI slices (market/dupire_from_svi.hpp) -- no finite
     differences anywhere in the chain from raw quotes to this grid."""
-    ticker, spot, dividend, result = _calibrate(
-        ticker,
-        rate,
-        min_open_interest,
-        min_bid,
-        max_spread_ratio,
-        min_moneyness,
-        max_moneyness,
-    )
+    ticker, spot, dividend, result = _calibrate(ticker, rate)
     stats = result["cleaning_stats"]
 
     K_grid = result["K_grid"]

@@ -39,20 +39,37 @@ def warm_once(today: date) -> List[Tuple[str, float, str]]:
     """Calibrate (or find stored) every tracked ticker's latest surface at
     each remembered rate. Returns (ticker, rate, outcome) per pair."""
     done: List[Tuple[str, float, str]] = []
+    chain_iv = market_snapshot.option_data() == "chain_iv"
     for ticker in db.options_chain_tickers(today - timedelta(days=TRACKED_WITHIN_DAYS)):
-        for rate in stochastic_vol.remembered_rates(ticker):
+        # Under chain_iv the pages leave the rate empty (the market's carry,
+        # WP 31 L6) and the library's products live a year: warm that one
+        # market, not the rates remembered from typed requests.
+        rates = [None] if chain_iv else stochastic_vol.remembered_rates(ticker)
+        for rate in rates:
             if _stop.is_set():
                 return done
             try:
-                market = market_snapshot.local_vol_market(ticker, rate, today)
+                market = market_snapshot.local_vol_market(
+                    ticker, rate, today, _library_horizon() if chain_iv else None
+                )
                 sv = stochastic_vol.calibrate(market)
-                done.append((ticker, rate, f"ready for {sv.snapshot.isoformat()}"))
+                done.append(
+                    (ticker, market.rate, f"ready for {sv.snapshot.isoformat()}")
+                )
             except (
                 market_snapshot.MarketDataUnavailable,
                 stochastic_vol.CalibrationUnavailable,
             ) as exc:
-                done.append((ticker, rate, f"skipped: {exc}"))
+                done.append((ticker, rate or 0.0, f"skipped: {exc}"))
     return done
+
+
+def _library_horizon() -> float:
+    """The life of the library's one-year products, the horizon the pages
+    price them at (precision.horizon_years on a term sheet with no maturity)."""
+    from . import product_templates
+
+    return float(product_templates.span_years("european-call"))
 
 
 def _run() -> None:

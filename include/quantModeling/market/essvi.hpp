@@ -131,7 +131,31 @@ namespace quantModeling
         Real min_forward_vol = 0.05;
         /// monotone_theta's roughness weight, relative to the data's (see there).
         Real forward_smoothing = 0.1;
+        /// The surface's pillars (essvi_surface_pillars): consecutive ones at
+        /// least this far apart in relative maturity, as SVI's slice selection
+        /// (SurfaceSliceSelection::min_relative_gap). Every feasible slice is
+        /// fitted; only the pillars build the surface and its local vol.
+        Real surface_min_relative_gap = 0.25;
     };
+
+    /**
+     * Which feasible fits are the surface's pillars (WP 30 E4): the shortest,
+     * then each one at least (1 + min_relative_gap) times the last kept in
+     * maturity, and the longest always (it replaces the last kept, unless that
+     * is the shortest). The others stay calibrated -- each fit is conditioned
+     * on the feasible one before it -- but build neither the surface nor the
+     * local vol.
+     *
+     * Why: Dupire reads dw/dT, and two pillars a day apart (SPX has an expiry
+     * every few days) make it the difference of two fits' noise over a day:
+     * on SPY 2026-11-26 the one-year local vol jumped from 0.31 to 0.18
+     * between neighbouring columns. And forty pillars leave too few grid
+     * columns to give each segment its two edges (local_vol_maturities), so
+     * the grid fell back to equal steps starting at 0.08 years, past the
+     * first month's steep put wing: a three-month put 20 % out of the money
+     * priced 41 % under its own surface.
+     */
+    std::vector<bool> essvi_surface_pillars(const std::vector<ESSVISliceFit> &fits, Real min_relative_gap);
 
     /**
      * The slices, in the order given (`ttms` increasing), each fitted under

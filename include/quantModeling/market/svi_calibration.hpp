@@ -98,6 +98,11 @@ namespace quantModeling
      * each quote's own market IV -- so the ATM region, which carries the most
      * information about the level of the smile, is not swamped by noisy wing
      * quotes with large absolute price but tiny vega.
+     *
+     * On quotes cleaned at ingestion (CleaningParams::ingestion_cleaned, WP 31
+     * D4) the weight is instead 1 / (half-spread / vega)^2: the inverse
+     * variance of the quote's IV error, the spread standing for its price
+     * error, floored at 0.01 vol point. A quote with no spread keeps the vega.
      */
     std::vector<SVISliceQuote> svi_quotes_from_raw_surface(
         const RawVolSurface &surface, Real ttm, Real ttm_tolerance = 1e-9);

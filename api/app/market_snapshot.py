@@ -18,13 +18,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Dict, List
+from typing import Dict, List, Optional, Union
 
 import quantmodeling as qm
 
-from . import db
+from . import chain_iv, db
 from .audit.payloads import MarketInputStatus
 from .compute_timing import phase
 from .keyed_cache import KeyedCache
@@ -62,6 +63,41 @@ class MarketDataUnavailable(RuntimeError):
     """The database lacks (or holds too stale) what pricing needs."""
 
 
+#: Which option data the surfaces are built from (WP 31, decision D5):
+#: `legacy`, options.chain_snapshot with Yahoo's implied vols and today's
+#: cleaning, or `chain_iv`, the quotes data-ingest cleaned at ingestion
+#: (options.chain_iv: our own implied vols, OTM, the market's forwards).
+#: `legacy` until the maintainer switches; a rollback is this variable.
+OPTION_DATA_ENV = "QM_OPTION_DATA"
+OPTION_DATA = ("legacy", "chain_iv")
+
+
+#: The implied-vol surface the local vol is built from (WP 30, E2): `svi`
+#: (SVI slices, a calendar-consistent subset) or `essvi` (extended SSVI free
+#: of static arbitrage, on spaced pillars, E4). Production sets it in
+#: docker-compose.prod.yml; a rollback is this variable.
+VOL_SURFACE_ENV = "QM_VOL_SURFACE"
+VOL_SURFACES = ("svi", "essvi")
+
+
+def vol_surface() -> str:
+    value = os.environ.get(VOL_SURFACE_ENV, "svi").strip().lower() or "svi"
+    if value not in VOL_SURFACES:
+        raise ValueError(
+            f"{VOL_SURFACE_ENV}={value!r}: expected one of {', '.join(VOL_SURFACES)}"
+        )
+    return value
+
+
+def option_data() -> str:
+    value = os.environ.get(OPTION_DATA_ENV, "legacy").strip().lower() or "legacy"
+    if value not in OPTION_DATA:
+        raise ValueError(
+            f"{OPTION_DATA_ENV}={value!r}: expected one of {', '.join(OPTION_DATA)}"
+        )
+    return value
+
+
 @dataclass
 class LocalVolMarket:
     ticker: str
@@ -89,6 +125,24 @@ class LocalVolMarket:
     surface_model: str = "svi"
     essvi_forward_smoothing: float = 0.1
     essvi_min_forward_vol: float = 0.05
+    #: The option data the surface came from (QM_OPTION_DATA).
+    option_data: str = "legacy"
+    #: The native cleaning's counts per stage (raw_count ... final_count).
+    cleaning_stats: Dict[str, int] = field(default_factory=dict)
+    #: chain_iv only: the market carry the rate and dividend were fitted to
+    #: (horizon, market rate, carry), else None.
+    carry: Optional["chain_iv.MarketCarry"] = None
+    #: chain_iv only: the accepted expiries the carry is read from.
+    expiries: tuple = ()
+
+    def carry_for(self, horizon: float, rate: Optional[float]):
+        """The market carry at another horizon (chain_iv), for a closed form
+        that needs no grid; None under legacy."""
+        if not self.expiries:
+            return None
+        return chain_iv.MarketCarry.at(
+            self.expiries, self.spot, max(horizon, 1.0 / 365.0), rate
+        )
 
     def surface_slices(self) -> List[Dict[str, float]]:
         """The SVI slices every mark reads: see surface_slices()."""
@@ -162,6 +216,9 @@ class _Chain:
     quotes: list
     fingerprint: str
     source: str
+    #: What the surface's reader should know about the chain (chain_iv: the
+    #: proxy surface of D2, the discount's fallback).
+    warnings: tuple = ()
 
 
 #: Parsed chains by (ticker, snapshot date, registry checksum): ~1.2 MB per
@@ -225,9 +282,116 @@ class _ChainChanged(Exception):
         self.chain = chain
 
 
+IV_REGISTRY_SOURCE = "db:options.chain_iv_loads"
+IV_ROWS_SOURCE = "db:options.chain_iv"
+
+
+def _iv_rows(ticker: str, load: "db.ChainIvLoad") -> tuple:
+    """A computed chain's rows and their fingerprint (the registry's
+    checksum, else a digest of the rows)."""
+    rows = read_store(db.options_chain_iv, ticker, load.snapshot_date)
+    if load.checksum:
+        return rows, f"{load.checksum}:v{load.method_version}", IV_REGISTRY_SOURCE
+    digest = hashlib.sha256(
+        json.dumps([chain_iv.row_key(r) for r in rows]).encode()
+    ).hexdigest()
+    return rows, digest, IV_ROWS_SOURCE
+
+
+def _iv_chain(ticker: str, load: "db.ChainIvLoad", spot: float) -> _Chain:
+    """The surface's quotes from options.chain_iv. A ticker with a European
+    proxy (D2: SPY on ^SPX) takes the proxy's quotes of the same day carried
+    onto its own forwards, or its own quotes, with a warning, on a day the
+    proxy has none."""
+    snap = load.snapshot_date
+    proxy = chain_iv.EUROPEAN_PROXY.get(ticker)
+    proxy_load = (
+        read_store(db.options_chain_iv_load_on_or_before, proxy, snap)
+        if proxy
+        else None
+    )
+    if proxy_load is not None and proxy_load.snapshot_date != snap:
+        proxy_load = None
+
+    def read() -> _Chain:
+        rows, fingerprint, source = _iv_rows(ticker, load)
+        warnings = []
+        if load.curve_source == "fred":
+            warnings.append(
+                {
+                    "code": "rate_fallback",
+                    "severity": "info",
+                    "message": (
+                        f"The {snap.isoformat()} chain is discounted on FRED's "
+                        "SOFR and Treasury yields: no European index chain was "
+                        "stored that day to read the option market's own rate from."
+                    ),
+                }
+            )
+        if proxy_load is not None:
+            proxy_rows, proxy_fp, _ = _iv_rows(proxy, proxy_load)
+            expiries = read_store(db.options_chain_iv_expiries, ticker, snap)
+            if expiries:
+                quotes = chain_iv.carried_onto(
+                    proxy_rows, chain_iv.CarryCurve.of(expiries, spot)
+                )
+                warnings.append(
+                    {
+                        "code": "european_proxy_surface",
+                        "severity": "info",
+                        "message": (
+                            f"The surface is {proxy}'s European options of "
+                            f"{snap.isoformat()}, carried onto {ticker}'s own "
+                            "forwards: the same smile in ln(K/F), at "
+                            f"{ticker}'s scale, with no early-exercise premium "
+                            "to remove."
+                        ),
+                    }
+                )
+                return _Chain(
+                    quotes,
+                    hashlib.sha256(
+                        json.dumps([fingerprint, proxy_fp, spot]).encode()
+                    ).hexdigest(),
+                    source,
+                    tuple(warnings),
+                )
+        if proxy:
+            warnings.append(
+                {
+                    "code": "own_american_surface",
+                    "severity": "warning",
+                    "message": (
+                        f"No {proxy} chain is stored for {snap.isoformat()}: the "
+                        f"surface is {ticker}'s own American options, "
+                        "de-Americanized at ingestion, instead of the European "
+                        "index surface."
+                    ),
+                }
+            )
+        quotes = [chain_iv.quote(r) for r in chain_iv.usable(rows)]
+        return _Chain(quotes, fingerprint, source, tuple(warnings))
+
+    if not load.checksum or (proxy_load is not None and not proxy_load.checksum):
+        return read()
+    key = (
+        "chain_iv",
+        ticker,
+        snap,
+        load.checksum,
+        proxy_load.checksum if proxy_load is not None else None,
+        spot,
+    )
+    return _chains.get(key, read)
+
+
 def warm_chain(ticker: str, today: date) -> bool:
     """Loads a ticker's latest chain into memory before any request asks for
-    it. True if it is now cached (False without a registry row)."""
+    it. True if it is now cached (False without a registry row). Under
+    QM_OPTION_DATA=chain_iv the chain needs the spot it is carried onto, so
+    the calibration warm-up (calibration_warmup.py) loads it instead."""
+    if option_data() == "chain_iv":
+        return False
     load = read_store(db.options_chain_load_on_or_before, ticker.upper(), today)
     if load is None or load.checksum is None:
         return False
@@ -240,15 +404,30 @@ def clear_caches() -> None:
     _surfaces.clear()
 
 
-def chain_quotes(ticker: str, rate: float, valuation_date: date) -> tuple:
+def chain_quotes(
+    ticker: str,
+    rate: Optional[float],
+    valuation_date: date,
+    horizon: Union[None, float, date] = None,
+) -> tuple:
     """The stored chain's quotes (from the cache when the registry names
     them), with what reading them needs: (quotes, spot, rate, dividend,
     snapshot date) -- for a precision target inferred from the market's
     spreads (precision.delta_sigma)."""
-    m = local_vol_market(ticker, rate, valuation_date)
+    if option_data() == "chain_iv":
+        # The quotes carry their own forward and discount: no calibration
+        # is needed to read their spreads in vol (precision.delta_sigma).
+        quotes, spot, snap = stored_chain(ticker, valuation_date)
+        return quotes, spot, rate if rate is not None else 0.0, 0.0, snap
+    m = local_vol_market(ticker, rate, valuation_date, horizon)
     ticker = ticker.upper().strip()
-    load = read_store(db.options_chain_load_on_or_before, ticker, valuation_date)
-    return _chain(ticker, load).quotes, m.spot, rate, m.dividend, m.valuation_date
+    load = _load(ticker, valuation_date, m.option_data)
+    chain = (
+        _iv_chain(ticker, load, m.spot)
+        if m.option_data == "chain_iv"
+        else _chain(ticker, load)
+    )
+    return chain.quotes, m.spot, m.rate, m.dividend, m.valuation_date
 
 
 def read_store(fn, *args):
@@ -261,8 +440,28 @@ def read_store(fn, *args):
         ) from exc
 
 
-def local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVolMarket:
-    """Stored chain + close + dividend yield -> calibrated Dupire grid."""
+#: The horizon a market is fitted to when the caller names none (a display,
+#: not a product): one year.
+DEFAULT_HORIZON_YEARS = 1.0
+
+
+def local_vol_market(
+    ticker: str,
+    rate: Optional[float],
+    valuation_date: date,
+    horizon: Union[None, float, date] = None,
+) -> LocalVolMarket:
+    """Stored chain + close + carry -> calibrated Dupire grid.
+
+    The carry the grid and the pricers use (`rate`, `dividend` of the
+    result) depends on QM_OPTION_DATA:
+    - `legacy`: `rate` as given and the stored trailing dividend yield;
+    - `chain_iv` (WP 31 L6, D1): fitted to the market's discount and forward
+      at `horizon` (the product's last date, or its life in years; one year
+      when omitted), so a vanilla expiring then reprices on the surface's
+      forward. `rate` is an override: None takes the market's; a typed one
+      replaces the discount and keeps the market's forward.
+    """
     with (
         phase("market"),
         tracer.start_as_current_span(
@@ -270,28 +469,34 @@ def local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVol
             attributes={"qm.valuation_date": str(valuation_date)},
         ),
     ):
-        return _local_vol_market(ticker, rate, valuation_date)
+        return _local_vol_market(ticker, rate, valuation_date, horizon)
 
 
-def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVolMarket:
+def _local_vol_market(
+    ticker: str,
+    rate: Optional[float],
+    valuation_date: date,
+    horizon: Union[None, float, date],
+) -> LocalVolMarket:
     ticker = ticker.upper().strip()
-
-    load = read_store(db.options_chain_load_on_or_before, ticker, valuation_date)
-    if load is None:
-        raise MarketDataUnavailable(
-            f"no option-chain snapshot for '{ticker}' on or before "
-            f"{valuation_date.isoformat()} in the database. data-ingest's "
-            "options-chain-snapshot source tracks a fixed universe "
-            "(OPTIONS_CHAIN_TICKERS); a ticker outside it has no stored surface."
+    data = option_data()
+    surface = vol_surface()
+    if rate is None and data == "legacy":
+        raise ValueError(
+            f"a rate is required with {OPTION_DATA_ENV}=legacy: the market's "
+            "discount is read from options.chain_iv only"
         )
+
+    load = _load(ticker, valuation_date, data)
     snap = load.snapshot_date
     gap = (valuation_date - snap).days
     if gap > MAX_SNAPSHOT_GAP_DAYS:
+        source = "options-chain-iv" if data == "chain_iv" else "options-chain-snapshot"
         raise MarketDataUnavailable(
             f"the latest stored option-chain snapshot for '{ticker}' is "
             f"{snap.isoformat()}, {gap} days before the valuation date "
             f"{valuation_date.isoformat()} (at most {MAX_SNAPSHOT_GAP_DAYS} "
-            "allowed). Refresh it with `ingest run options-chain-snapshot`, "
+            f"allowed). Refresh it with `ingest run {source}`, "
             f"or value on the stored market date: valuation_date={snap.isoformat()}."
         )
 
@@ -305,17 +510,38 @@ def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVo
         )
     spot_date, spot = spot_row
 
-    div_row = read_store(db.dividend_yield_on_or_before, ticker, snap)
-    if div_row is None or (snap - div_row[0]).days > MAX_DIVIDEND_GAP_DAYS:
-        raise MarketDataUnavailable(
-            f"no recent dividend yield for '{ticker}' in prices.dividend_yields "
-            "(a non-payer is stored as 0.0, so a missing row means it was never "
-            "ingested: dividend-yields covers the options-chain default universe "
-            "only). No live fallback is used."
-        )
-    dividend = div_row[1]
+    carry = None
+    if data == "chain_iv":
+        expiries = read_store(db.options_chain_iv_expiries, ticker, snap)
+        if not expiries:
+            raise MarketDataUnavailable(
+                f"no accepted expiry for '{ticker}' on {snap.isoformat()} in "
+                "options.chain_iv_expiries: the market's forwards and discounts "
+                "are read there."
+            )
+        if isinstance(horizon, date):
+            years = (horizon - snap).days / 365.0
+        elif horizon is not None:
+            years = float(horizon)
+        else:
+            years = DEFAULT_HORIZON_YEARS
+        carry = chain_iv.MarketCarry.at(expiries, spot, max(years, 1.0 / 365.0), rate)
+        rate, dividend = carry.rate, carry.dividend
+        div_row = None
+    else:
+        div_row = read_store(db.dividend_yield_on_or_before, ticker, snap)
+        if div_row is None or (snap - div_row[0]).days > MAX_DIVIDEND_GAP_DAYS:
+            raise MarketDataUnavailable(
+                f"no recent dividend yield for '{ticker}' in prices.dividend_yields "
+                "(a non-payer is stored as 0.0, so a missing row means it was never "
+                "ingested: dividend-yields covers the options-chain default universe "
+                "only). No live fallback is used."
+            )
+        dividend = div_row[1]
 
-    chain = _chain(ticker, load)
+    chain = (
+        _iv_chain(ticker, load, spot) if data == "chain_iv" else _chain(ticker, load)
+    )
     if not chain.quotes:
         raise MarketDataUnavailable(
             f"the stored snapshot of '{ticker}' on {snap.isoformat()} has no "
@@ -338,13 +564,22 @@ def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVo
         spot_status,
         spot,
     )
-    record_market_input(
-        f"dividend:{ticker}",
-        "db:prices.dividend_yields",
-        div_row[0].isoformat(),
-        MarketInputStatus.OBSERVED,
-        dividend,
-    )
+    if div_row is not None:
+        record_market_input(
+            f"dividend:{ticker}",
+            "db:prices.dividend_yields",
+            div_row[0].isoformat(),
+            MarketInputStatus.OBSERVED,
+            dividend,
+        )
+    if carry is not None:
+        record_market_input(
+            f"carry:{ticker}",
+            "db:options.chain_iv_expiries",
+            snap.isoformat(),
+            MarketInputStatus.OBSERVED,
+            json.dumps([carry.horizon, carry.market_rate, carry.carry]),
+        )
     # The chain's fingerprint is the registry's checksum when there is one:
     # a replay compares it with the registry, so a revised chain is detected
     # without reading its rows.
@@ -361,9 +596,22 @@ def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVo
     # is a new key, not a stale hit).
     surface_key = hashlib.sha256(
         json.dumps(
-            [ticker, snap.isoformat(), spot, rate, dividend, chain.fingerprint]
+            [
+                ticker,
+                snap.isoformat(),
+                spot,
+                rate,
+                dividend,
+                chain.fingerprint,
+                data,
+                surface,
+            ]
         ).encode()
     ).hexdigest()
+    cleaning = qm.CleaningParams()
+    cleaning.ingestion_cleaned = data == "chain_iv"
+    # Only eSSVI is passed explicitly: the SVI call stays the one it was.
+    surface_kw = {"surface_model": "essvi"} if surface == "essvi" else {}
     with phase("calibration"):
         result = _surfaces.get(
             surface_key,
@@ -376,11 +624,40 @@ def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVo
                 K_MAX,
                 N_STRIKES,
                 N_MATURITIES,
-                cleaning_params=qm.CleaningParams(),
+                cleaning_params=cleaning,
+                **surface_kw,
             ),
         )
 
-    warnings: List[Dict[str, str]] = []
+    warnings: List[Dict[str, str]] = [dict(w) for w in chain.warnings]
+    if carry is not None:
+        warnings.append(
+            {
+                "code": "market_carry",
+                "severity": "info",
+                "message": (
+                    f"Priced on the market's forward and discount at "
+                    f"{carry.horizon:.2f}y (options.chain_iv): carry "
+                    f"{carry.carry:.4%}, rate {carry.rate:.4%}, so a dividend "
+                    f"yield of {carry.dividend:.4%}. A vanilla expiring then "
+                    "reprices on the surface; a product with earlier dates sees "
+                    "the carry flat over its life."
+                ),
+            }
+        )
+        if carry.typed:
+            warnings.append(
+                {
+                    "code": "rate_override",
+                    "severity": "warning",
+                    "message": (
+                        f"The typed rate {carry.rate:.4%} replaces the market's "
+                        f"{carry.market_rate:.4%} for discounting; the forward "
+                        "stays the market's. Leave the rate empty to price on the "
+                        "market's discount."
+                    ),
+                }
+            )
     if snap != valuation_date:
         warnings.append(
             {
@@ -425,4 +702,59 @@ def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVo
         surface_model=str(result.get("surface_model", "svi")),
         essvi_forward_smoothing=float(result.get("essvi_forward_smoothing", 0.1)),
         essvi_min_forward_vol=float(result.get("essvi_min_forward_vol", 0.05)),
+        option_data=data,
+        cleaning_stats=dict(result.get("cleaning_stats", {})),
+        carry=carry,
+        expiries=tuple(expiries) if carry is not None else (),
     )
+
+
+def snapshot_date(ticker: str, valuation_date: date) -> date:
+    """The stored market date a valuation on `valuation_date` is priced on
+    (one registry read; the refusals are local_vol_market's)."""
+    return _load(ticker.upper().strip(), valuation_date, option_data()).snapshot_date
+
+
+def stored_chain(ticker: str, valuation_date: date) -> tuple:
+    """The stored chain's quotes as the surface would read them, with no
+    calibration (the raw view), and the close they sit against: (quotes,
+    spot, snapshot date). Same sources and refusals as local_vol_market."""
+    ticker = ticker.upper().strip()
+    data = option_data()
+    load = _load(ticker, valuation_date, data)
+    snap = load.snapshot_date
+    spot_row = read_store(db.price_on_or_before, ticker, snap)
+    if spot_row is None or (snap - spot_row[0]).days > MAX_SPOT_GAP_DAYS:
+        raise MarketDataUnavailable(
+            f"no close for '{ticker}' within {MAX_SPOT_GAP_DAYS} days of the "
+            f"snapshot {snap.isoformat()} in prices.sp500_daily."
+        )
+    spot = spot_row[1]
+    chain = (
+        _iv_chain(ticker, load, spot) if data == "chain_iv" else _chain(ticker, load)
+    )
+    return chain.quotes, spot, snap
+
+
+def _load(ticker: str, valuation_date: date, data: str):
+    """The registry row of the chain `data` names, latest on or before the
+    valuation date."""
+    if data == "chain_iv":
+        load = read_store(db.options_chain_iv_load_on_or_before, ticker, valuation_date)
+        if load is None:
+            raise MarketDataUnavailable(
+                f"no computed option chain (options.chain_iv) for '{ticker}' on "
+                f"or before {valuation_date.isoformat()}. data-ingest's "
+                "options-chain-iv source computes it from the stored snapshots "
+                f"({OPTION_DATA_ENV}=chain_iv)."
+            )
+        return load
+    load = read_store(db.options_chain_load_on_or_before, ticker, valuation_date)
+    if load is None:
+        raise MarketDataUnavailable(
+            f"no option-chain snapshot for '{ticker}' on or before "
+            f"{valuation_date.isoformat()} in the database. data-ingest's "
+            "options-chain-snapshot source tracks a fixed universe "
+            "(OPTIONS_CHAIN_TICKERS); a ticker outside it has no stored surface."
+        )
+    return load

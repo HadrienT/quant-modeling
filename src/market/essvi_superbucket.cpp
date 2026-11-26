@@ -405,11 +405,23 @@ namespace quantModeling
 
         // ── The calibration and the grid, as calibrate_vol_surface ran them ──
         const std::vector<ESSVISliceFit> fits = calibrate_essvi_slices(quotes, ttms, settings);
-        std::vector<std::size_t> in_surface; // input index of each surface slice
+        const std::vector<bool> pillar = essvi_surface_pillars(fits, settings.surface_min_relative_gap);
+        // The calibration's chain (every feasible fit, each conditioned on the
+        // one before it) and, among it, the surface's pillars.
+        std::vector<std::size_t> chain, on_surface;
+        std::vector<ESSVISliceFit> pillar_fits;
         for (std::size_t s = 0; s < fits.size(); ++s)
-            if (fits[s].feasible)
-                in_surface.push_back(s);
-        const ESSVISurface surface(fits);
+        {
+            if (!fits[s].feasible)
+                continue;
+            chain.push_back(s);
+            if (pillar[s])
+            {
+                on_surface.push_back(s);
+                pillar_fits.push_back(fits[s]);
+            }
+        }
+        const ESSVISurface surface(std::move(pillar_fits));
         const GridLocalVol grid =
             build_local_vol_grid(surface, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities, params);
         const std::vector<Real> &K = grid.K_grid();
@@ -425,8 +437,8 @@ namespace quantModeling
 
         SuperbucketResult out;
         out.dV_dessvi.assign(quotes.size(), {0.0, 0.0, 0.0});
-        const std::size_t ns = in_surface.size();
-        std::vector<std::array<Real, 3>> xbar(ns); // dV/d(theta, rho, psi) per surface slice
+        const std::size_t ns = chain.size();
+        std::vector<std::array<Real, 3>> xbar(ns, {0.0, 0.0, 0.0}); // dV/d(theta, rho, psi) per fit of the chain
 
         // ── Through Dupire, on tape ──────────────────────────────────────────
         {
@@ -463,10 +475,12 @@ namespace quantModeling
                 L += dV_dsigma_loc[idx] * sqrt(lv[src]);
             }
             L.propagate_to_start();
-            for (std::size_t s = 0; s < ns; ++s)
+            for (std::size_t p = 0, c = 0; p < on_surface.size(); ++p)
             {
-                xbar[s] = {x[s].theta.adjoint(), x[s].rho.adjoint(), x[s].psi.adjoint()};
-                out.dV_dessvi[in_surface[s]] = xbar[s];
+                while (chain[c] != on_surface[p])
+                    ++c;
+                xbar[c] = {x[p].theta.adjoint(), x[p].rho.adjoint(), x[p].psi.adjoint()};
+                out.dV_dessvi[on_surface[p]] = xbar[c];
             }
         }
 
@@ -477,9 +491,9 @@ namespace quantModeling
         std::vector<Real> theta_bar(quotes.size(), 0.0); // into the term structure
         for (std::size_t s = ns; s-- > 0;)
         {
-            const std::size_t at = in_surface[s];
+            const std::size_t at = chain[s];
             const ESSVIParams &p = fits[at].params;
-            const ESSVIParams *before = s > 0 ? &fits[in_surface[s - 1]].params : nullptr;
+            const ESSVIParams *before = s > 0 ? &fits[chain[s - 1]].params : nullptr;
             const Eigen::MatrixXd M = fit_jacobian(quotes[at], ttms[at], p, before, settings.rho_max);
             const Eigen::Vector2d ybar(xbar[s][1], xbar[s][2]);
             const Eigen::VectorXd ubar = M.transpose() * ybar;

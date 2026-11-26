@@ -73,7 +73,11 @@ def market_vega(req: ScriptedProductRequest) -> MarketVegaResponse:
         )
     if not req.ticker:
         raise ValueError("vega by quoted option needs a ticker (its stored chain)")
-    m = market_snapshot.local_vol_market(req.ticker, req.rate, req.valuation_date)
+    from .pricing_service import _market_horizon
+
+    m = market_snapshot.local_vol_market(
+        req.ticker, req.rate, req.valuation_date, _market_horizon(req, False)
+    )
     script = product_templates.render(req.product, req.terms, m.valuation_date)
     size = len(m.K_grid) * len(m.T_grid)
     per_batch = max(req.n_paths // BATCHES, 1000)
@@ -84,7 +88,7 @@ def market_vega(req: ScriptedProductRequest) -> MarketVegaResponse:
         priced = qm.price_script(
             script,
             m.spot,
-            req.rate,
+            m.rate if getattr(m, "carry", None) is not None else req.rate,
             m.dividend,
             0.0,
             m.valuation_date.isoformat(),
@@ -107,7 +111,7 @@ def market_vega(req: ScriptedProductRequest) -> MarketVegaResponse:
         bucket = qm.dupire_superbucket(
             m.svi_slices,
             m.spot,
-            req.rate,
+            m.rate if getattr(m, "carry", None) is not None else req.rate,
             m.dividend,
             m.k_min,
             m.k_max,

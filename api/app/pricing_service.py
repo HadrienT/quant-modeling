@@ -385,7 +385,9 @@ def _local_vol_markets(req: ScriptRequest, m) -> Tuple[Optional[list], str]:
     for a in m.assets:
         try:
             markets.append(
-                market_snapshot.local_vol_market(a.ticker, req.rate, req.valuation_date)
+                market_snapshot.local_vol_market(
+                    a.ticker, _required_rate(req), req.valuation_date
+                )
             )
         except market_snapshot.MarketDataUnavailable as exc:
             return None, f"{a.ticker} has no usable stored option chain ({exc})"
@@ -447,7 +449,7 @@ def _price_multi_asset(
                     )
                     for u in req.underlyings
                 ],
-                req.rate,
+                _required_rate(req),
                 req.valuation_date,
                 horizon,
                 req.currency,
@@ -540,7 +542,7 @@ def _price_multi_asset(
         result = qm.price_script(
             script,
             used[0].spot,
-            req.rate,
+            _required_rate(req),
             used[0].dividend + used[0].drift_adjustment,
             used[0].vol,
             valuation_date.isoformat(),
@@ -732,9 +734,14 @@ def _price_scripted_analytic(req: ScriptedProductRequest) -> PricingResponse:
     T = max(events[-1]["t"] - events[0]["t"], 1e-6)
     if typed:
         S, q, sigma = req.spot, req.dividend, req.vol
+        r = _required_rate(req)
         source = "typed"
     else:
-        S, q = market.spot, market.dividend
+        S, q, r = market.spot, market.dividend, req.rate
+        carry_for = getattr(market, "carry_for", None)
+        carry = carry_for(T, req.rate) if carry_for else None
+        if carry is not None:  # chain_iv: the carry at this product's expiry
+            r, q = carry.rate, carry.dividend
         with phase("calibration"):
             sigma = _atm_implied_vol(
                 SimpleNamespace(script=script, day_count=req.day_count),
@@ -749,7 +756,7 @@ def _price_scripted_analytic(req: ScriptedProductRequest) -> PricingResponse:
     defaults = {p.name: p.default for p in product_templates.get(req.product).params}
     terms = {**defaults, **req.terms}
     with phase("engine"):
-        npv, greeks, what = _black_scholes(req.product, terms, S, req.rate, q, sigma, T)
+        npv, greeks, what = _black_scholes(req.product, terms, S, r, q, sigma, T)
     diagnostics = (
         f"Analytic {what}, Black-Scholes at vol {sigma:.4f} ({source}; strike "
         f"{float(terms['strike']):.4g} x spot {S:.4f}, expiry T = {T:.4f} y)"
@@ -790,7 +797,7 @@ def _price_rates_on_the_curve(req: ScriptedProductRequest) -> PricingResponse:
             "diagnostics": (
                 "Analytic: the cash flows discounted on the "
                 + (
-                    f"flat curve at {req.rate:.4%} (typed)"
+                    f"flat curve at {_required_rate(req):.4%} (typed)"
                     if hw.curve == "flat"
                     else f"{hw.currency} government curve"
                 )
@@ -865,8 +872,8 @@ def _price_sofr_closed_form(req: ScriptedProductRequest) -> PricingResponse:
         def flat_curve(r: float):
             return grid, [math.exp(-r * t) for t in grid]
 
-        times, dfs = flat_curve(req.rate)
-        label, fit, m = f"flat curve at {req.rate:.4%} (typed)", None, None
+        times, dfs = flat_curve(_required_rate(req))
+        label, fit, m = f"flat curve at {_required_rate(req):.4%} (typed)", None, None
         a, sigma = hw.mean_reversion, hw.sigma
     else:
         with phase("market"):
@@ -894,7 +901,7 @@ def _price_sofr_closed_form(req: ScriptedProductRequest) -> PricingResponse:
         bumped = {}
         for h in (_BP, -_BP):
             if flat:
-                t, d = flat_curve(req.rate + h)
+                t, d = flat_curve(_required_rate(req) + h)
             else:
                 t, d = rates_derivatives.sofr_curve(
                     [(x, r + h) for x, r in m.swap_quotes]
@@ -1109,7 +1116,10 @@ def _resolved_choice(req, script: str, fields: dict, start_today: bool) -> Dict:
     market, valuation_date = None, probe.valuation_date
     if probe.ticker:
         market = market_snapshot.local_vol_market(
-            probe.ticker, probe.rate, probe.valuation_date
+            probe.ticker,
+            probe.rate,
+            probe.valuation_date,
+            _market_horizon(probe, start_today),
         )
         valuation_date = market.valuation_date
     return {
@@ -1380,7 +1390,10 @@ def price_script(
         # the valuation date the script is priced on.
         with phase("market"):
             market = market_snapshot.local_vol_market(
-                req.ticker, req.rate, req.valuation_date
+                req.ticker,
+                req.rate,
+                req.valuation_date,
+                _market_horizon(req, start_today),
             )
         valuation_date = market.valuation_date
         market_warnings = list(market.warnings)
@@ -1447,6 +1460,14 @@ def price_script(
                 "mc_vol_error": rv.mc_vol_error,
             }
 
+    # The market's carry when there is a market (WP 31 L6: under chain_iv
+    # the rate and dividend fitted to its forward and discount at the
+    # product's horizon; under legacy, req.rate and the stored yield).
+    rate = (
+        market.rate
+        if getattr(market, "carry", None) is not None
+        else _required_rate(req)
+    )
     if market is not None:
         spot, dividend, vol = market.spot, market.dividend, 0.0
         k_grid, t_grid = market.K_grid, market.T_grid
@@ -1522,7 +1543,7 @@ def price_script(
             return qm.price_script(
                 script,
                 spot,
-                req.rate,
+                rate,
                 dividend,
                 vol,
                 valuation_date.isoformat(),
@@ -1599,8 +1620,39 @@ def _market_quotes(req):
     from . import market_snapshot
 
     return lambda: market_snapshot.chain_quotes(
-        req.ticker, req.rate, req.valuation_date
+        req.ticker, req.rate, req.valuation_date, _market_horizon(req, False)
     )
+
+
+def _required_rate(req) -> float:
+    """The request's rate where no market supplies one (typed inputs, the
+    multi-asset and rates paths)."""
+    if req.rate is None:
+        raise ValueError(
+            "`rate` is required here: only a single-ticker market under "
+            "QM_OPTION_DATA=chain_iv reads the market's discount when it is left empty"
+        )
+    return req.rate
+
+
+def _market_horizon(req, start_today: bool) -> Optional[float]:
+    """The years from the stored market date to the script's last date: the
+    horizon the market's carry is fitted to (WP 31 L6). A library product
+    started on the market date (`start_today`) lives its last date less its
+    first. None under legacy, where the carry does not depend on it, and
+    for a script with no date."""
+    from . import market_snapshot
+
+    if market_snapshot.option_data() != "chain_iv" or not req.ticker:
+        return None
+    snap = market_snapshot.snapshot_date(req.ticker, req.valuation_date)
+    if getattr(req, "script", None) is None:  # a library product's term sheet
+        return float(precision.horizon_years(req, snap))
+    events = qm.validate_script(req.script, snap.isoformat(), req.day_count)["events"]
+    if not events:
+        return None
+    first = events[0]["t"] if start_today else 0.0
+    return max(events[-1]["t"] - first, 1.0 / 365.0)
 
 
 def _qe_price_euler_risks(run, greeks_method: str, second_order: bool) -> Dict:
@@ -1670,7 +1722,7 @@ def _hull_white_inputs(req) -> tuple:
         # every input typed: a flat curve at `rate` (the C++ model's own flat
         # curve when no pillar is given), a and sigma as the request says
         params = {"mean_reversion": hw.mean_reversion, "sigma": hw.sigma, "rho": hw.rho}
-        return params, [], [], f"flat curve at {req.rate:.4%} (typed)", None
+        return params, [], [], f"flat curve at {_required_rate(req):.4%} (typed)", None
     try:
         curve = rates.currency_discount_curve(hw.currency)
     except rates.RatesUnavailable as exc:

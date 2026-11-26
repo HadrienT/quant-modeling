@@ -293,7 +293,9 @@ void register_core(py::module_ &m)
         .def_readwrite("volume", &quantModeling::RawOptionQuote::volume)
         .def_readwrite("open_interest", &quantModeling::RawOptionQuote::open_interest)
         .def_readwrite("implied_vol", &quantModeling::RawOptionQuote::implied_vol)
-        .def_readwrite("has_iv", &quantModeling::RawOptionQuote::has_iv);
+        .def_readwrite("has_iv", &quantModeling::RawOptionQuote::has_iv)
+        .def_readwrite("forward", &quantModeling::RawOptionQuote::forward)
+        .def_readwrite("discount", &quantModeling::RawOptionQuote::discount);
 
     py::class_<quantModeling::CleaningParams>(m, "CleaningParams")
         .def(py::init<>())
@@ -304,7 +306,9 @@ void register_core(py::module_ &m)
         .def_readwrite("max_moneyness", &quantModeling::CleaningParams::max_moneyness)
         .def_readwrite("oi_coverage_threshold", &quantModeling::CleaningParams::oi_coverage_threshold)
         .def_readwrite("min_plausible_iv", &quantModeling::CleaningParams::min_plausible_iv)
-        .def_readwrite("max_plausible_iv", &quantModeling::CleaningParams::max_plausible_iv);
+        .def_readwrite("max_plausible_iv", &quantModeling::CleaningParams::max_plausible_iv)
+        .def_readwrite("ingestion_cleaned", &quantModeling::CleaningParams::ingestion_cleaned)
+        .def_readwrite("max_abs_log_moneyness", &quantModeling::CleaningParams::max_abs_log_moneyness);
 
     m.def("bachelier_implied_vol", &quantModeling::bachelier_implied_vol, py::arg("payer"), py::arg("price"),
           py::arg("forward"), py::arg("strike"), py::arg("expiry"), py::arg("annuity"),

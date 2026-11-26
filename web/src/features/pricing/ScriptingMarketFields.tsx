@@ -11,6 +11,8 @@ export type DayCount = (typeof DAY_COUNTS)[number];
 export function ScriptingMarketFields(props: {
 	/** Market models (every one but flat Black-Scholes): spot, dividend and vol come from the stored market. */
 	marketDriven?: boolean;
+	/** One ticker on a market model: an empty rate is the market's (WP 31 L6). */
+	rateFromMarket?: boolean;
 	valuationDate: string;
 	onValuationDate: (v: string) => void;
 	spot: string;
@@ -48,7 +50,13 @@ export function ScriptingMarketFields(props: {
 				/>
 			)}
 			<Field
-				label="Rate %"
+				label={props.rateFromMarket ? "Rate % (override)" : "Rate %"}
+				title={
+					props.rateFromMarket
+						? "Empty: discounted on the market's rate. A typed rate replaces the discount only; the forward stays the market's."
+						: undefined
+				}
+				placeholder={props.rateFromMarket ? "market" : undefined}
 				inputMode="decimal"
 				value={props.ratePct}
 				onChange={(e) => props.onRatePct(e.target.value)}

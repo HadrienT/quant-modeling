@@ -35,7 +35,6 @@ from api.app.audit.sinks import (
     set_sink_for_testing,
 )
 from api.app.main import app
-from api.app import vol_surface
 
 
 @pytest.fixture
@@ -135,58 +134,27 @@ def test_hash_ip_is_stable_and_does_not_leak_the_address(monkeypatch):
     assert hash_ip(None) is None
 
 
-# ── One test per known fallback path (WP §5.1 lists them explicitly). ──────────
+# ── No live Yahoo path is left (removed by the maintainer, 2026-11-26). ─────
 
 
-def test_fallback_option_chain_when_no_stored_snapshot(monkeypatch, inmemory_sink):
-    monkeypatch.setattr(
-        vol_surface.db,
-        "options_chain_snapshot",
-        lambda ticker: (_ for _ in ()).throw(db.StoreUnavailable("down")),
+def test_the_api_never_loads_yfinance():
+    """Structural: importing the whole app must not import yfinance, so no
+    route can fall back on Yahoo's data (WP 31). The LIVE_YFINANCE_* kinds
+    stay in the audit contract for the events already recorded."""
+    import subprocess
+    import sys
+
+    out = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.path.insert(0, 'api'); import app.main; "
+            "print('yfinance' in sys.modules)",
+        ],
+        capture_output=True,
+        text=True,
     )
-    monkeypatch.setattr(vol_surface, "_fetch_live_chain_with_expiry", lambda ticker: [])
-    monkeypatch.setattr(vol_surface, "_cache_live_chain", lambda ticker, pairs: None)
-
-    vol_surface.fetch_option_chain("SPY")
-
-    kinds = [
-        e.payload["kind"] for e in inmemory_sink.events if e.type == "data.fallback"
-    ]
-    assert FallbackKind.LIVE_YFINANCE_CHAIN.value in kinds
-
-
-def test_fallback_spot_when_no_stored_price(monkeypatch, inmemory_sink):
-    monkeypatch.setattr(
-        vol_surface.db,
-        "latest_price",
-        lambda ticker: (_ for _ in ()).throw(db.StoreUnavailable("down")),
-    )
-    monkeypatch.setattr(vol_surface, "_get_spot_live", lambda ticker: 123.0)
-
-    price = vol_surface.get_spot("SPY")
-
-    assert price == 123.0
-    kinds = [
-        e.payload["kind"] for e in inmemory_sink.events if e.type == "data.fallback"
-    ]
-    assert FallbackKind.LIVE_YFINANCE_SPOT.value in kinds
-
-
-def test_fallback_dividend_yield_when_no_stored_value(monkeypatch, inmemory_sink):
-    monkeypatch.setattr(
-        vol_surface.db,
-        "latest_dividend_yield",
-        lambda ticker: (_ for _ in ()).throw(db.StoreUnavailable("down")),
-    )
-    monkeypatch.setattr(vol_surface, "_get_dividend_yield_live", lambda ticker: 0.02)
-
-    yld = vol_surface.get_dividend_yield("SPY")
-
-    assert yld == 0.02
-    kinds = [
-        e.payload["kind"] for e in inmemory_sink.events if e.type == "data.fallback"
-    ]
-    assert FallbackKind.LIVE_YFINANCE_DIVIDEND.value in kinds
+    assert out.stdout.strip().splitlines()[-1:] == ["False"], out.stderr[-2000:]
 
 
 def test_record_fallback_is_a_thin_wrapper_around_emit(inmemory_sink):
