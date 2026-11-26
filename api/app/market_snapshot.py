@@ -84,6 +84,11 @@ class LocalVolMarket:
     k_max: float = 0.6
     n_strikes: int = 100
     n_maturities: int = 50
+    #: The implied-vol surface the grid came from ("svi" or "essvi") and the
+    #: eSSVI settings: the superbucket reruns that calibration.
+    surface_model: str = "svi"
+    essvi_forward_smoothing: float = 0.1
+    essvi_min_forward_vol: float = 0.05
 
     def surface_slices(self) -> List[Dict[str, float]]:
         """The SVI slices every mark reads: see surface_slices()."""
@@ -417,4 +422,7 @@ def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVo
         k_max=float(result.get("k_max", K_MAX)),
         n_strikes=N_STRIKES,
         n_maturities=N_MATURITIES,
+        surface_model=str(result.get("surface_model", "svi")),
+        essvi_forward_smoothing=float(result.get("essvi_forward_smoothing", 0.1)),
+        essvi_min_forward_vol=float(result.get("essvi_min_forward_vol", 0.05)),
     )

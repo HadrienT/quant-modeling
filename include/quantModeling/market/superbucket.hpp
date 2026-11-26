@@ -3,6 +3,7 @@
 
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/market/dupire_from_svi.hpp"
+#include "quantModeling/market/essvi.hpp"
 #include "quantModeling/market/svi_calibration.hpp"
 
 #include <array>
@@ -31,6 +32,9 @@ namespace quantModeling
         /// Parameters held at a bound of their calibration: frozen, so they
         /// carry no sensitivity to the quotes.
         std::vector<std::array<bool, 5>> at_bound;
+        /// essvi_superbucket only: dV / d(theta, rho, psi) of each input
+        /// slice through Dupire alone (zero for a slice left out).
+        std::vector<std::array<Real, 3>> dV_dessvi;
     };
 
     /**
@@ -64,6 +68,37 @@ namespace quantModeling
         std::size_t n_strikes, std::size_t n_maturities,
         const std::vector<Real> &dV_dsigma_loc,
         const DupireFromSVIParams &params = {});
+
+    /**
+     * @brief The superbucket of a local-vol price whose grid an eSSVI
+     *        surface built (blueprint/wp/30-vol-surface.md, lot E3).
+     *
+     * `quotes`, `ttms` and `settings` are what calibrate_essvi_slices was
+     * given (calibrate_vol_surface's slices past min_ttm), `k_min`, `k_max`
+     * the grid's range; the calibration is rerun, deterministically, to read
+     * its active sets. dV/dsigma_loc goes back through four maps: Dupire on
+     * an AAD tape, to dV/d(theta, rho, psi) per slice; each slice's fit, last
+     * to first, by the implicit function theorem on its active bounds -- the
+     * butterfly bounds, the rho bound, and the calendar bounds, which move
+     * with the slice before, so that a slice's risk flows into the ones
+     * before it; the term structure's QP on its active set (forward
+     * variances at their floor); and the at-the-money estimates, linear in
+     * the quotes' total variances, with their standard errors.
+     *
+     * Every quote of every input slice gets a row: a slice left out of the
+     * surface still moved the term structure. The implicit function theorem
+     * is exact: the fits' full Hessians, residual terms included (a slice
+     * held on a calendar bound away from its quotes has large residuals, and
+     * dupire_superbucket's Gauss-Newton Hessian was 4-16 % off there), and
+     * the active bounds' curvature through their multipliers. Only
+     * `smooth_theta` is supported.
+     */
+    SuperbucketResult essvi_superbucket(const std::vector<std::vector<SVISliceQuote>> &quotes,
+                                        const std::vector<Real> &ttms, const ESSVICalibrationSettings &settings,
+                                        Real spot, Real rate, Real dividend, Real k_min, Real k_max,
+                                        std::size_t n_strikes, std::size_t n_maturities,
+                                        const std::vector<Real> &dV_dsigma_loc,
+                                        const DupireFromSVIParams &params = {});
 
 } // namespace quantModeling
 

@@ -3,6 +3,7 @@
 
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/market/svi_calibration.hpp"
+#include "quantModeling/market/essvi.hpp"
 #include "quantModeling/market/svi_surface.hpp"
 #include "quantModeling/models/volatility.hpp"
 
@@ -35,6 +36,10 @@ namespace quantModeling
      */
     Real svi_surface_local_variance(const SVISurface &surface, Real k, Real T,
                                     const DupireFromSVIParams &params = {}) noexcept;
+    /// The same on the eSSVI surface (#381), whose conditions make it
+    /// positive wherever its slices hold them.
+    Real svi_surface_local_variance(const ESSVISurface &surface, Real k, Real T,
+                                    const DupireFromSVIParams &params = {}) noexcept;
 
     /**
      * The maturity columns of the local-vol grid: n_maturities points on
@@ -50,6 +55,7 @@ namespace quantModeling
      * steps when n_maturities is below two per segment.
      */
     std::vector<Real> local_vol_maturities(const SVISurface &surface, std::size_t n_maturities);
+    std::vector<Real> local_vol_maturities(const ESSVISurface &surface, std::size_t n_maturities);
 
     /**
      * Builds the (K_grid, T_grid, sigma_loc) grid GridLocalVol needs: T on
@@ -89,6 +95,9 @@ namespace quantModeling
     std::vector<QuotedBand> local_vol_column_bands(const SVISurface &surface,
                                                    const std::vector<QuotedBand> &slice_bands,
                                                    const std::vector<Real> &T_grid);
+    std::vector<QuotedBand> local_vol_column_bands(const ESSVISurface &surface,
+                                                   const std::vector<QuotedBand> &slice_bands,
+                                                   const std::vector<Real> &T_grid);
 
     /// The cells (K-major) outside their column's band.
     std::vector<bool> outside_column_bands(const std::vector<Real> &K_grid, const std::vector<Real> &T_grid,
@@ -117,6 +126,12 @@ namespace quantModeling
      * capped the whole two-year grid there).
      */
     GridLocalVol build_local_vol_grid(const SVISurface &surface, Real spot, Real rate, Real dividend,
+                                      Real k_min, Real k_max,
+                                      std::size_t n_strikes = 100, std::size_t n_maturities = 50,
+                                      const DupireFromSVIParams &params = {},
+                                      const std::vector<QuotedBand> *slice_bands = nullptr);
+    /// The same grid from the eSSVI surface (#381).
+    GridLocalVol build_local_vol_grid(const ESSVISurface &surface, Real spot, Real rate, Real dividend,
                                       Real k_min, Real k_max,
                                       std::size_t n_strikes = 100, std::size_t n_maturities = 50,
                                       const DupireFromSVIParams &params = {},

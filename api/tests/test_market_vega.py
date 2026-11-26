@@ -43,7 +43,9 @@ def _chain(shift: float = 0.0, expiries=EXPIRIES):
     return quotes
 
 
-def _market(shift: float = 0.0, expiries=EXPIRIES) -> market_snapshot.LocalVolMarket:
+def _market(
+    shift: float = 0.0, expiries=EXPIRIES, model: str = "svi"
+) -> market_snapshot.LocalVolMarket:
     ms = market_snapshot
     r = qm.calibrate_vol_surface(
         _chain(shift, expiries),
@@ -55,6 +57,7 @@ def _market(shift: float = 0.0, expiries=EXPIRIES) -> market_snapshot.LocalVolMa
         ms.N_STRIKES,
         ms.N_MATURITIES,
         cleaning_params=qm.CleaningParams(),
+        surface_model=model,
     )
     return ms.LocalVolMarket(
         ticker="TEST",
@@ -68,12 +71,16 @@ def _market(shift: float = 0.0, expiries=EXPIRIES) -> market_snapshot.LocalVolMa
         rate=RATE,
         k_min=r["k_min"],
         k_max=r["k_max"],
+        surface_model=r["surface_model"],
     )
 
 
-@pytest.fixture
-def chain(monkeypatch):
-    m = _market()
+# Both surfaces (blueprint/wp/30-vol-surface.md): SVI slice by slice, and
+# eSSVI, whose superbucket goes through the term structure and the slices'
+# arbitrage bounds.
+@pytest.fixture(params=["svi", "essvi"])
+def chain(request, monkeypatch):
+    m = _market(model=request.param)
     monkeypatch.setattr(market_snapshot, "local_vol_market", lambda *a: m)
     return m
 
@@ -104,7 +111,7 @@ def test_the_quote_vegas_add_up_to_moving_the_whole_chain(chain, monkeypatch):
     h = 0.005  # half a vol point each way
 
     def price(shift):
-        m = _market(shift)
+        m = _market(shift, model=chain.surface_model)
         total = 0.0
         for b in range(market_vega.BATCHES):
             total += qm.price_script(
@@ -145,11 +152,12 @@ def test_the_maturities_before_the_product_carry_almost_none(chain):
     assert early and all(abs(m.vega) < 0.1 * out.total_vega for m in early)
 
 
-def test_a_short_slice_stays_out_of_the_surface_and_gets_no_vega(monkeypatch):
+@pytest.mark.parametrize("model", ["svi", "essvi"])
+def test_a_short_slice_stays_out_of_the_surface_and_gets_no_vega(monkeypatch, model):
     # A 0.02y expiry is below SurfaceSliceSelection::min_ttm: calibrated and
     # reported, but not a pillar of the local vol -- so none of its quotes
     # moves the price.
-    m = _market(expiries=(0.02,) + EXPIRIES)
+    m = _market(expiries=(0.02,) + EXPIRIES, model=model)
     monkeypatch.setattr(market_snapshot, "local_vol_market", lambda *a: m)
     flags = {round(s["ttm"], 4): s["in_surface"] for s in m.svi_slices}
     assert flags == {0.02: False, 0.25: True, 0.5: True, 1.0: True, 1.5: True}

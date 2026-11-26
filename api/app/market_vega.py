@@ -6,8 +6,11 @@ each implied vol of the stored option chain -- the Dupire superbucket
    with adjoint differentiation: dV/dsigma_loc on every point of the Dupire
    grid, in one pass (lot 17e).
 2. market/superbucket.hpp takes those model risks to the market: through the
-   Dupire formula on an AAD tape, then through each SVI fit by the implicit
-   function theorem -- dV/d(each quoted implied vol).
+   Dupire formula on an AAD tape, then through the surface's calibration by
+   the implicit function theorem -- dV/d(each quoted implied vol). An SVI
+   surface: each slice's fit. An eSSVI one (blueprint/wp/30-vol-surface.md):
+   the slices' fits under their arbitrage bounds, the at-the-money term
+   structure and its estimates.
 
 The Monte-Carlo error of a quote's vega is measured, not guessed: the AAD
 runs on BATCHES independent seeds, each batch goes through the superbucket
@@ -111,6 +114,9 @@ def market_vega(req: ScriptedProductRequest) -> MarketVegaResponse:
             m.n_strikes,
             m.n_maturities,
             _dV_dsigma(priced["risks"], len(m.T_grid), size),
+            surface_model=m.surface_model,
+            essvi_forward_smoothing=m.essvi_forward_smoothing,
+            essvi_min_forward_vol=m.essvi_min_forward_vol,
         )
         return priced["npv"], bucket["quotes"], priced.get("device", "cpu")
 
@@ -158,8 +164,14 @@ def market_vega(req: ScriptedProductRequest) -> MarketVegaResponse:
             f"Local vol calibrated from the stored chain; adjoint Monte-Carlo on "
             f"{BATCHES} batches of {per_batch:,} paths"
             + (" (per-path adjoint on the GPU)" if device == "gpu" else "")
-            + "; through Dupire on a tape, then each SVI fit by the implicit "
-            "function theorem (Gauss-Newton)."
+            + "; through Dupire on a tape, then "
+            + (
+                "the eSSVI calibration by the implicit function theorem: each "
+                "slice's fit under its active arbitrage bounds, the at-the-money "
+                "term structure, the at-the-money estimates (exact Hessians)."
+                if m.surface_model == "essvi"
+                else "each SVI fit by the implicit function theorem (Gauss-Newton)."
+            )
         ),
         device=device,
     )

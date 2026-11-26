@@ -4,6 +4,7 @@
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/market/calibration/levenberg_marquardt.hpp"
 #include "quantModeling/market/dupire_from_svi.hpp"
+#include "quantModeling/market/essvi.hpp"
 #include "quantModeling/market/raw_vol_surface.hpp"
 #include "quantModeling/market/svi.hpp"
 #include "quantModeling/market/svi_calibration.hpp"
@@ -31,6 +32,10 @@ namespace quantModeling
         /// built from (see select_surface_slices). A slice left out is still
         /// calibrated and reported, for display and for Heston's fit.
         bool in_surface = false;
+        /// eSSVI only: the slice was one of calibrate_essvi_slices' inputs
+        /// (past min_ttm). Its quotes moved the term structure even when it
+        /// is not in the surface, so the superbucket reads them.
+        bool in_calibration = false;
         /// The cleaned quotes the slice was fitted to (log-moneyness, implied
         /// vol, weight): the market the superbucket differentiates against.
         std::vector<SVISliceQuote> quotes;
@@ -64,6 +69,20 @@ namespace quantModeling
         /// lies outside the bands of the two slices it interpolates.
         Real k_min = 0.0;
         Real k_max = 0.0;
+    };
+
+    /// What the local-vol grid is built from (#381).
+    enum class SurfaceModel
+    {
+        /// Independent SVI slices, the longest calendar-free chain of them
+        /// (select_surface_slices), total variance linear in T.
+        SVI,
+        /// Extended SSVI calibrated slice by slice under the no-arbitrage
+        /// conditions (market/essvi.hpp): every slice with enough quotes
+        /// enters unless its feasible set is empty, the surface between them
+        /// is free of static arbitrage, and its local vol is computed on the
+        /// whole grid (no band: its wings are arbitrage-free too).
+        ESSVI,
     };
 
     /// Which calibrated slices the local-vol surface is built from.
@@ -142,7 +161,9 @@ namespace quantModeling
         const CleaningParams &cleaning_params = {},
         const calibration::LevenbergMarquardtSettings &lm_settings = {},
         const DupireFromSVIParams &dupire_params = {},
-        const SurfaceSliceSelection &selection = {});
+        const SurfaceSliceSelection &selection = {},
+        SurfaceModel surface_model = SurfaceModel::SVI,
+        const ESSVICalibrationSettings &essvi = {});
 
 } // namespace quantModeling
 

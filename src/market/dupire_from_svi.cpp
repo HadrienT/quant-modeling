@@ -9,8 +9,12 @@
 namespace quantModeling
 {
 
-    Real svi_surface_local_variance(const SVISurface &surface, Real k, Real T,
-                                    const DupireFromSVIParams &params) noexcept
+    // The grid's functions read a surface through total_variance(_dk, _dk2,
+    // _dT), ttm_min / ttm_max, slices()[i].ttm and bracket(): SVISurface's
+    // and ESSVISurface's (#381). Templates here, an overload of each below.
+    template <class Surface>
+    Real local_variance_t(const Surface &surface, Real k, Real T,
+                          const DupireFromSVIParams &params) noexcept
     {
         constexpr Real nan = std::numeric_limits<Real>::quiet_NaN();
 
@@ -93,7 +97,8 @@ namespace quantModeling
         return source;
     }
 
-    std::vector<Real> local_vol_maturities(const SVISurface &surface, std::size_t n_maturities)
+    template <class Surface>
+    std::vector<Real> maturities_t(const Surface &surface, std::size_t n_maturities)
     {
         // Segments [0, T_1], [T_1, T_2], ... of the surface; dw/dT jumps at
         // each T_i, and a column straddling one would blend two segments.
@@ -200,9 +205,10 @@ namespace quantModeling
         return source;
     }
 
-    std::vector<QuotedBand> local_vol_column_bands(const SVISurface &surface,
-                                                   const std::vector<QuotedBand> &slice_bands,
-                                                   const std::vector<Real> &T_grid)
+    template <class Surface>
+    std::vector<QuotedBand> column_bands_t(const Surface &surface,
+                                           const std::vector<QuotedBand> &slice_bands,
+                                           const std::vector<Real> &T_grid)
     {
         if (slice_bands.size() != surface.slices().size())
             throw InvalidInput("local_vol_column_bands: one band per surface slice");
@@ -210,9 +216,9 @@ namespace quantModeling
         out.reserve(T_grid.size());
         for (const Real T : T_grid)
         {
-            const SVISurface::Bracket b = surface.bracket(T);
+            const typename Surface::Bracket b = surface.bracket(T);
             const QuotedBand &upper = slice_bands[b.upper];
-            if (b.lower == SVISurface::kZeroSlice || b.lower == b.upper)
+            if (b.lower == Surface::kZeroSlice || b.lower == b.upper)
             {
                 out.push_back(upper);
                 continue;
@@ -223,12 +229,13 @@ namespace quantModeling
         return out;
     }
 
-    GridLocalVol build_local_vol_grid(const SVISurface &surface, Real spot, Real rate, Real dividend,
-                                      Real k_min, Real k_max,
-                                      std::size_t n_strikes, std::size_t n_maturities,
-                                      const DupireFromSVIParams &params, const std::vector<QuotedBand> *slice_bands)
+    template <class Surface>
+    GridLocalVol build_t(const Surface &surface, Real spot, Real rate, Real dividend,
+                         Real k_min, Real k_max,
+                         std::size_t n_strikes, std::size_t n_maturities,
+                         const DupireFromSVIParams &params, const std::vector<QuotedBand> *slice_bands)
     {
-        const std::vector<Real> T_grid = local_vol_maturities(surface, n_maturities);
+        const std::vector<Real> T_grid = maturities_t(surface, n_maturities);
 
         // Strike grid: fixed log-moneyness band, converted to strikes at the
         // mid-maturity forward -- same convention as
@@ -245,7 +252,7 @@ namespace quantModeling
         std::vector<bool> outside;
         if (slice_bands != nullptr)
             outside = outside_column_bands(K_grid, T_grid, spot, rate, dividend,
-                                           local_vol_column_bands(surface, *slice_bands, T_grid));
+                                           column_bands_t(surface, *slice_bands, T_grid));
         std::vector<Real> loc_var(n_strikes * n_maturities);
         for (std::size_t i = 0; i < n_strikes; ++i)
         {
@@ -256,7 +263,7 @@ namespace quantModeling
                 const Real k = std::log(K_grid[i] / F_T);
                 const std::size_t idx = i * n_maturities + j;
                 loc_var[idx] = !outside.empty() && outside[idx] ? std::numeric_limits<Real>::quiet_NaN()
-                                                                : svi_surface_local_variance(surface, k, T, params);
+                                                                : local_variance_t(surface, k, T, params);
             }
         }
 
@@ -272,6 +279,46 @@ namespace quantModeling
         }
 
         return GridLocalVol(std::move(K_grid), T_grid, std::move(sigma_loc));
+    }
+
+    Real svi_surface_local_variance(const SVISurface &surface, Real k, Real T, const DupireFromSVIParams &params) noexcept
+    {
+        return local_variance_t(surface, k, T, params);
+    }
+    std::vector<Real> local_vol_maturities(const SVISurface &surface, std::size_t n_maturities)
+    {
+        return maturities_t(surface, n_maturities);
+    }
+    std::vector<QuotedBand> local_vol_column_bands(const SVISurface &surface, const std::vector<QuotedBand> &slice_bands,
+                                                   const std::vector<Real> &T_grid)
+    {
+        return column_bands_t(surface, slice_bands, T_grid);
+    }
+    GridLocalVol build_local_vol_grid(const SVISurface &surface, Real spot, Real rate, Real dividend, Real k_min, Real k_max,
+                                      std::size_t n_strikes, std::size_t n_maturities,
+                                      const DupireFromSVIParams &params, const std::vector<QuotedBand> *slice_bands)
+    {
+        return build_t(surface, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities, params, slice_bands);
+    }
+
+    Real svi_surface_local_variance(const ESSVISurface &surface, Real k, Real T, const DupireFromSVIParams &params) noexcept
+    {
+        return local_variance_t(surface, k, T, params);
+    }
+    std::vector<Real> local_vol_maturities(const ESSVISurface &surface, std::size_t n_maturities)
+    {
+        return maturities_t(surface, n_maturities);
+    }
+    std::vector<QuotedBand> local_vol_column_bands(const ESSVISurface &surface, const std::vector<QuotedBand> &slice_bands,
+                                                   const std::vector<Real> &T_grid)
+    {
+        return column_bands_t(surface, slice_bands, T_grid);
+    }
+    GridLocalVol build_local_vol_grid(const ESSVISurface &surface, Real spot, Real rate, Real dividend, Real k_min, Real k_max,
+                                      std::size_t n_strikes, std::size_t n_maturities,
+                                      const DupireFromSVIParams &params, const std::vector<QuotedBand> *slice_bands)
+    {
+        return build_t(surface, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities, params, slice_bands);
     }
 
 } // namespace quantModeling
