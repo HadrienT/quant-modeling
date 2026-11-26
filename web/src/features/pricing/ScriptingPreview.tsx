@@ -32,6 +32,7 @@ import {
 	DEFAULT_VARIANCE_REDUCTION,
 	varianceReductionRequest,
 } from "./scripting/VarianceReductionFields";
+import { rateRequest, singleMarket } from "./scripting/marketRequest";
 
 /**
  * Preview surface for the payoff scripting language (blueprint/wp/16-scripting.md).
@@ -49,7 +50,7 @@ export default function ScriptingPreview() {
 		alignToValuationDate(DEFAULT_PRODUCT.script, today()),
 	);
 	const [spot, setSpot] = useState("100");
-	const [ratePct, setRatePct] = useState("3");
+	const [ratePct, setRatePct] = useState("");
 	const [divPct, setDivPct] = useState("0");
 	const [volPct, setVolPct] = useState("20");
 	const [valuationDate, setValuationDate] = useState(today);
@@ -82,13 +83,7 @@ export default function ScriptingPreview() {
 		() => (error ? parseScriptDiagnostic(error.message) : null),
 		[error],
 	);
-	const single = market
-		? { ticker }
-		: {
-				spot: Number(spot),
-				dividend: Number(divPct) / 100,
-				vol: Number(volPct) / 100,
-			};
+	const single = singleMarket(market, ticker, spot, divPct, volPct);
 
 	return (
 		<div className="mx-auto flex max-w-5xl flex-col gap-6">
@@ -110,7 +105,7 @@ export default function ScriptingPreview() {
 							script,
 							model,
 							...(n > 1 ? underlyingsRequest(n, market, underlyings) : single),
-							...(ratePct.trim() === "" ? {} : { rate: Number(ratePct) / 100 }),
+							...rateRequest(ratePct),
 							valuation_date: valuationDate,
 							day_count: dayCount,
 							fuzzy,
@@ -156,6 +151,7 @@ export default function ScriptingPreview() {
 
 					<ScriptingMarketFields
 						marketDriven={market || n > 1}
+						rateFromMarket={market && n <= 1}
 						valuationDate={valuationDate}
 						onValuationDate={setValuationDate}
 						spot={spot}

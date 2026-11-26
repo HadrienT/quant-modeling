@@ -109,7 +109,7 @@ function modelLines(m: Measured, p: ScriptedProduct): Line[] {
 			text:
 				p.market === "rates"
 					? `The ${m.market} from the site's database (fed by the ingestion pipeline), read on the valuation date.`
-					: `Spot, dividend yield and option chain of ${m.market} from the site's database, the latest stored snapshot; a flat rate of 4 % (the page's default, editable).`,
+					: `Spot and option chain of ${m.market} from the site's database, the latest stored snapshot: implied vols, forwards and discounts computed at ingestion. The rate and the dividend yield are the market's carry at the product's maturity, unless a rate is typed (it then replaces the discount only).`,
 		},
 	];
 	const how = calib[m.model ?? ""];

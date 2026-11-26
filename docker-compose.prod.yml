@@ -38,6 +38,10 @@ services:
       # Heston/SLV calibrated for each new chain snapshot before the first
       # request (api/app/calibration_warmup.py).
       - QM_CALIBRATION_WARMUP=${QM_CALIBRATION_WARMUP:-1}
+      # The option data the surfaces are built from (WP 31, D5): chain_iv, the
+      # quotes data-ingest cleans at ingestion (our implied vols, the market's
+      # forwards). Roll back with QM_OPTION_DATA=legacy in .env, no code change.
+      - QM_OPTION_DATA=${QM_OPTION_DATA:-chain_iv}
       # GPU script kernels compiled once and kept on the data volume: a
       # restart or a deployment reads them back instead of compiling, and the
       # warm-up at start rebuilds those a new kernel made stale (WP 27 L1b).
