@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | *In progress*. E1 (the eSSVI surface in the C++ core, its Dupire grid, the binding behind `surface_model="essvi"`) and E3 (market vega through the eSSVI calibration) done. E2 (the API's local-vol market on eSSVI) waits: on clean data (WP 31 §5.10) the eSSVI surface reprices the market, but the local vol built from it misprices the one-year ATM put by −3.5 % and cuts the variance swap from the surface's 0.0597 to 0.049; the Dupire step from eSSVI has to reprice its own surface first. Issue #381 |
+| **Status** | *Done*. E1 (the eSSVI surface, its Dupire grid, the binding's `surface_model="essvi"`), E3 (market vega through the eSSVI calibration), E4 (the surface and its local vol on spaced pillars, §5.1) and E2 (`QM_VOL_SURFACE`, production on eSSVI) done on 2026-11-26, after WP 31 cleaned the quotes. Issue #381 |
 | **Depends on** | WP 08 (stored option chains, quote cleaning), WP 16 (the local-vol and SLV script models that read the grid) |
 | **Issue** | #381 |
 
@@ -178,8 +178,39 @@ smoothing: a quote outvoted by its neighbours also lends them its risk.
 | Lot | Content | Status |
 |---|---|---|
 | E1 | eSSVI slice, conditions, calibration, term-structure smoothing, surface, Dupire grid; `surface_model` in the binding; `tests/testESSVI.cpp` (slice equals SVI with exact derivatives; noiseless recovery; contradicting quotes still give an arbitrage-free surface whose grid needs no fallback) | Done |
-| E2 | `market_snapshot._local_vol_market` on eSSVI. Local-vol and SLV prices move, so measure the library products before and after, and the maintainer decides. The raw-SVI path stays available | To do |
+| E2 | `market_snapshot._local_vol_market` on eSSVI behind `QM_VOL_SURFACE=svi\|essvi` (code default `svi`, production `essvi`), the surface model in the calibration's cache key; the Vol tab, the pricers, the market vega and the Heston/SLV calibrations follow it | Done (§5.1): on clean data (WP 31 §5.10) after E4; median move against SVI 0.57 % over the library |
+| E4 | The surface's pillars: every feasible slice fitted, only those spaced by 25 % in maturity (`essvi_surface_pillars`, as SVI's selection) build the surface, its Dupire grid and the superbucket's | Done (§5.1): SPY's eSSVI local vol reprices its surface within 0.8 % from 3 months to 2 years |
 | E3 | Market vega (superbucket) through the eSSVI calibration, §4 below: `essvi_superbucket`, the binding's `surface_model`, `api/app/market_vega.py` reading the market's surface; `tests/testESSVISuperbucket.cpp`, `api/tests/test_market_vega.py` on both surfaces | Done |
+
+### 5.1 E4 and E2, measured on SPY 2026-11-26 (clean data, WP 31)
+
+**What E4 found.** On WP 31's clean quotes the eSSVI surface reprices the market (the one-year put at S0 to +0.1 %, the fair variance above half the forward exactly), but its local vol priced that put 3.5 % low and a three-month put 20 % out of the money 41 % low. The surface had forty pillars, SPX's expiries a few days apart at the short end:
+- Dupire's dw/dT between two pillars a day apart is the difference of two fits' noise over a day: the one-year local vol at k = −0.2 jumped between 0.31 and 0.18 from one column to the next;
+- `local_vol_maturities` needs two columns per segment; forty segments and fifty columns made it fall back to equal steps from 0.081 y, so the first month's put wing (local vol about 0.9) was read as the 0.081 y column's 0.31.
+
+**The fix.** `essvi_surface_pillars`: every feasible slice is still fitted (each fit is conditioned on the one before it) and reported; only the shortest, then each one at least 25 % longer than the last kept, and the longest, build the surface. SVI's slice selection already used that spacing for the same reason. On SPY: 15 pillars, the grid aligned on them from 0.026 y.
+
+**Local vol against its own surface** (200k paths, 252 steps a year; Black price on the surface, in %):
+
+| T | k = −0.2 put | −0.1 put | 0.0 call | +0.1 call |
+|---|---|---|---|---|
+| 0.25, before E4 | −41.0 | −21.3 | −5.1 | −9.9 |
+| 0.25, after | −0.0 | +0.6 | +0.8 | +3.9 |
+| 1.0, before | −13.9 | −6.9 | −1.6 | +3.8 |
+| 1.0, after | −0.1 | +0.2 | +0.2 | +0.6 |
+| 2.0, after | −0.1 | +0.1 | +0.1 | +0.2 |
+
+SVI's local vol on the same data: within 1.3 % on the puts and at the money, +3.9 % on the three-month call at k = +0.1 and +5.0 % on the one-year one. The short call wing past the quoted band (where the grid is flat and the surface extrapolates) is the remaining gap of both.
+
+**Against the market** (WP 31 §5.10's references, one-year products):
+
+| | fair variance | P(S_T < S0) | put at S0 |
+|---|---|---|---|
+| market | 0.054–0.062 | 0.337 | 45.89 |
+| SVI: local vol / Heston / SLV | 0.058 / 0.058 / 0.060 | 0.339 / 0.328 / 0.340 | −1.3 / −3.4 / −2.2 % |
+| eSSVI after E4 | 0.058 / 0.060 / 0.060 | 0.331 / 0.330 / 0.331 | −0.3 / −2.6 / −1.3 % |
+
+**E2's rehearsal**: every tracked ticker calibrates in the same time as on SVI; the 39 single-underlying library products price under `auto` with no error; the median move against SVI is 0.57 %, the largest the SLV variance products (−8 %) and the SLV barriers (+5 %).
 
 ## 6. Sources
 
