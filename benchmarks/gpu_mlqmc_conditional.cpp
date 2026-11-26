@@ -18,6 +18,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -45,6 +47,28 @@ namespace
         s.sigma_loc_flat = {0.80, 0.70, 0.60, 0.45, 0.40, 0.35, 0.25, 0.24, 0.22,
                             0.16, 0.15, 0.14, 0.10, 0.10, 0.10};
         s.max_dt = 1.0 / 12.0;
+        // QM_BENCH_GRID: a market grid from a file (qm_mlmc_conditional_bench's
+        // format: dividend, nK nT, strikes scaled to a spot of 100, maturities,
+        // sigma_loc strike-major). QM_BENCH_SCHEME=before: Milstein on every
+        // step that reaches no date (#371).
+        if (const char *path = std::getenv("QM_BENCH_GRID"))
+        {
+            std::ifstream in(path);
+            std::size_t nK = 0, nT = 0;
+            in >> s.dividend >> nK >> nT;
+            s.rate = 0.04;
+            s.K_grid.resize(nK), s.T_grid.resize(nT), s.sigma_loc_flat.resize(nK * nT);
+            for (double &k : s.K_grid)
+                in >> k;
+            for (double &t : s.T_grid)
+                in >> t;
+            for (double &v : s.sigma_loc_flat)
+                in >> v;
+            if (!in)
+                throw std::runtime_error(std::string("QM_BENCH_GRID: cannot read ") + path);
+        }
+        if (const char *scheme = std::getenv("QM_BENCH_SCHEME"))
+            s.milstein_before_dates = std::string(scheme) == "before";
         return s;
     }
 

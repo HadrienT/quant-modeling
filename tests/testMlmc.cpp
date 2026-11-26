@@ -443,6 +443,40 @@ namespace quantModeling
         EXPECT_NEAR(milstein.value, euler.value, 4.0 * std::hypot(milstein.std_error, euler.std_error) + 0.01);
     }
 
+    // #371: Milstein on every step but the one into a date keeps that step
+    // lognormal, so the last-step closed forms and the coarse path's
+    // conditioning still apply -- and the conditioned digital's corrections
+    // decay as Giles's h^{3/2} instead of log-Euler's h^{1/2}.
+    TEST(Mlmc, MilsteinBeforeTheDatesKeepsTheClosedFormsAndLiftsBeta)
+    {
+        ScriptedProduct<Real> product(kLastStepDigital, ctx());
+        ScriptModelSpec spec = local_vol(false);
+        spec.milstein_before_dates = true;
+        auto m = make_script_model<Real>(spec);
+        m->init(product.timeline(), product.defline());
+        DeviceModel d; // the GPU prices it too (#371 M1), the flag set
+        ASSERT_TRUE(m->describe_device(d));
+        EXPECT_TRUE(d.milstein_before_dates);
+        const std::vector<double> half(m->sim_timeline().size(), 0.0), share(half.size(), 0.5);
+        EXPECT_TRUE(m->condition_on_fine_half_steps(half, share));
+        EXPECT_TRUE(m->condition_on_fine_half_steps({}, {}));
+
+        const std::vector<long long> n = {20000, 100000, 100000, 100000, 100000, 100000};
+        const MlmcResult before = simulate_mlmc_fixed(product, *make_script_model<Real>(spec), n, 31, true);
+        const MlmcResult euler = simulate_mlmc_fixed(product, *make_script_model<Real>(local_vol(false)), n, 31, true);
+        RecordProperty("before_beta", std::to_string(before.beta));
+        RecordProperty("euler_beta", std::to_string(euler.beta));
+        EXPECT_GT(before.beta, 1.2) << before.diagnostics;
+        EXPECT_LT(euler.beta, 0.8) << euler.diagnostics;
+        EXPECT_NEAR(before.value, euler.value, 4.0 * std::hypot(before.std_error, euler.std_error) + 0.05);
+
+        // A bridge survival is computed on every step: no conditioning then.
+        ScriptedProduct<Real> barrier(kUpAndOut, ctx());
+        auto b = make_script_model<Real>(spec);
+        b->init(barrier.timeline(), barrier.defline());
+        EXPECT_FALSE(b->condition_on_fine_half_steps(half, share));
+    }
+
     TEST(Mlmc, MilsteinCostGrowsAsEpsToTheMinusTwo)
     {
         // beta = 2 > gamma = 1: the MLMC cost is O(eps^-2) (Giles 2008,

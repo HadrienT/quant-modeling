@@ -65,6 +65,11 @@ namespace quantModeling
         /// kernel then draws two fine gaussians a step (scripting/ir_path.hpp,
         /// PathLayout::half).
         std::vector<Real> half_share;
+        /// Local vol: Milstein on every step that reaches no product date,
+        /// log-Euler on the others (#371, LocalVolSimModel::
+        /// set_milstein_before_dates). Price kernels only: the risks stay on
+        /// the CPU's tape until the IR differentiates the vol's slope.
+        bool milstein_before_dates = false;
 
         /// Heston and SLV: how a price run steps the variance (#317). The
         /// risk kernels (duals, adjoints) always step it by Euler.
