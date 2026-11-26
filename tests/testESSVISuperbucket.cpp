@@ -83,7 +83,13 @@ namespace quantModeling
 
         Real price_of(const std::vector<ESSVISliceFit> &fits)
         {
-            const ESSVISurface s(fits);
+            // The surface calibrate_vol_surface builds: its pillars only.
+            const std::vector<bool> pillar = essvi_surface_pillars(fits, settings().surface_min_relative_gap);
+            std::vector<ESSVISliceFit> pillars;
+            for (std::size_t i = 0; i < fits.size(); ++i)
+                if (fits[i].feasible && pillar[i])
+                    pillars.push_back(fits[i]);
+            const ESSVISurface s(pillars);
             const GridLocalVol g = build_local_vol_grid(s, kSpot, kRate, kDiv, kKmin, kKmax, kNK, kNT);
             const std::vector<Real> c = weights();
             Real v = 0.0;

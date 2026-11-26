@@ -193,6 +193,7 @@ def store(monkeypatch):
 
     def calibrate(quotes, spot, rate, dividend, *a, cleaning_params, **k):
         state["calls"].append((quotes, cleaning_params))
+        state.setdefault("kwargs", []).append(k)
         return {
             "K_grid": [40.0, 60.0],
             "T_grid": [0.1, 1.0],
@@ -253,3 +254,26 @@ def test_no_computed_chain_names_the_source_to_run(store):
     store["loads"].pop("SPY")
     with pytest.raises(ms.MarketDataUnavailable, match="options-chain-iv"):
         ms.local_vol_market("SPY", 0.04, SNAP)
+
+
+# ── QM_VOL_SURFACE (WP 30 E2) ──────────────────────────────────────────────
+
+
+def test_the_surface_switch_defaults_to_svi_and_refuses_an_unknown_value(monkeypatch):
+    monkeypatch.delenv(ms.VOL_SURFACE_ENV, raising=False)
+    assert ms.vol_surface() == "svi"
+    monkeypatch.setenv(ms.VOL_SURFACE_ENV, " eSSVI ")
+    assert ms.vol_surface() == "essvi"
+    monkeypatch.setenv(ms.VOL_SURFACE_ENV, "sabr")
+    with pytest.raises(ValueError):
+        ms.vol_surface()
+
+
+def test_essvi_is_asked_of_the_calibration_and_is_its_own_surface(store, monkeypatch):
+    monkeypatch.delenv(ms.VOL_SURFACE_ENV, raising=False)
+    ms.local_vol_market("SPY", 0.04, SNAP)
+    assert "surface_model" not in store["kwargs"][-1]  # the SVI call unchanged
+    monkeypatch.setenv(ms.VOL_SURFACE_ENV, "essvi")
+    ms.local_vol_market("SPY", 0.04, SNAP)
+    assert store["kwargs"][-1]["surface_model"] == "essvi"
+    assert len(store["calls"]) == 2  # a new surface, not the cached SVI one

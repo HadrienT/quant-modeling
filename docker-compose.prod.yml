@@ -42,6 +42,9 @@ services:
       # quotes data-ingest cleans at ingestion (our implied vols, the market's
       # forwards). Roll back with QM_OPTION_DATA=legacy in .env, no code change.
       - QM_OPTION_DATA=${QM_OPTION_DATA:-chain_iv}
+      # The implied-vol surface the local vol is built from (WP 30 E2): eSSVI,
+      # free of static arbitrage, on spaced pillars (E4). Rollback: svi in .env.
+      - QM_VOL_SURFACE=${QM_VOL_SURFACE:-essvi}
       # GPU script kernels compiled once and kept on the data volume: a
       # restart or a deployment reads them back instead of compiling, and the
       # warm-up at start rebuilds those a new kernel made stale (WP 27 L1b).

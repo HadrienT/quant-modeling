@@ -72,6 +72,23 @@ OPTION_DATA_ENV = "QM_OPTION_DATA"
 OPTION_DATA = ("legacy", "chain_iv")
 
 
+#: The implied-vol surface the local vol is built from (WP 30, E2): `svi`
+#: (SVI slices, a calendar-consistent subset) or `essvi` (extended SSVI free
+#: of static arbitrage, on spaced pillars, E4). Production sets it in
+#: docker-compose.prod.yml; a rollback is this variable.
+VOL_SURFACE_ENV = "QM_VOL_SURFACE"
+VOL_SURFACES = ("svi", "essvi")
+
+
+def vol_surface() -> str:
+    value = os.environ.get(VOL_SURFACE_ENV, "svi").strip().lower() or "svi"
+    if value not in VOL_SURFACES:
+        raise ValueError(
+            f"{VOL_SURFACE_ENV}={value!r}: expected one of {', '.join(VOL_SURFACES)}"
+        )
+    return value
+
+
 def option_data() -> str:
     value = os.environ.get(OPTION_DATA_ENV, "legacy").strip().lower() or "legacy"
     if value not in OPTION_DATA:
@@ -463,6 +480,7 @@ def _local_vol_market(
 ) -> LocalVolMarket:
     ticker = ticker.upper().strip()
     data = option_data()
+    surface = vol_surface()
     if rate is None and data == "legacy":
         raise ValueError(
             f"a rate is required with {OPTION_DATA_ENV}=legacy: the market's "
@@ -578,11 +596,22 @@ def _local_vol_market(
     # is a new key, not a stale hit).
     surface_key = hashlib.sha256(
         json.dumps(
-            [ticker, snap.isoformat(), spot, rate, dividend, chain.fingerprint, data]
+            [
+                ticker,
+                snap.isoformat(),
+                spot,
+                rate,
+                dividend,
+                chain.fingerprint,
+                data,
+                surface,
+            ]
         ).encode()
     ).hexdigest()
     cleaning = qm.CleaningParams()
     cleaning.ingestion_cleaned = data == "chain_iv"
+    # Only eSSVI is passed explicitly: the SVI call stays the one it was.
+    surface_kw = {"surface_model": "essvi"} if surface == "essvi" else {}
     with phase("calibration"):
         result = _surfaces.get(
             surface_key,
@@ -596,6 +625,7 @@ def _local_vol_market(
                 N_STRIKES,
                 N_MATURITIES,
                 cleaning_params=cleaning,
+                **surface_kw,
             ),
         )
 
