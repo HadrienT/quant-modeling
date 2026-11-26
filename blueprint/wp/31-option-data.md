@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | *In progress*: decisions D1, D2, D3, D5 taken on 2026-11-26 (§10). The `data-ingest` lots L1–L4 and L8 are done (data-ingest #32, #33, issue data-ingest #31); what they measured, and where they depart from this design, is in §4.7. L0 done: thresholds proposed in §6.1 (D4). L5–L7 to do. Issue #386 |
+| **Status** | *In progress*: decisions D1, D2, D3, D5 taken on 2026-11-26 (§10). The `data-ingest` lots L1–L4 and L8 are done (data-ingest #32, #33, issue data-ingest #31); what they measured, and where they depart from this design, is in §4.7. L0 done, D4 decided (§6.1, §10). L5–L7 to do. Issue #386 |
 | **Depends on** | WP 08 (stored option chains, `RawVolSurface` cleaning), WP 30 (the eSSVI surface that consumes the quotes) |
 | **Unlocks** | WP 30 E2 (the API on eSSVI, #381): its measured price moves mean nothing until the quotes are right |
 | **Repositories** | `~/data-ingest` (ingestion, the new derived table) and this one (the consumer, the reduced cleaning) |
@@ -251,7 +251,7 @@ What quant-modeling does with each `chain_iv` flag and each `CleaningParams` fil
 | `no_bid` | **excluded**, and per expiry and side, nothing beyond two consecutive zero bids walking away from F | Cboe VIX methodology (the strip's stop rule); Constantinides, Jackwerth & Savov "Bid = 0"; Burkovska et al. §4.4 apply the same rule | 6.6 % of SPX, 10 % of SPY, 27 % of AAPL |
 | `below_two_ticks` | **excluded** (replaces `min_bid` 0.05 $) | Cohort et al. 2018; Hentschel 2003 §V: truncation at the tick biases deep OTM prices, so their IVs, upwards | 4 % SPX, 10 % SPY |
 | `wide_spread` (> 50 %) | **excluded**, threshold kept at 50 % | a 5 % or 15 % cut (Damircheli 2026) is for SPX only: it keeps 82 % of SPX at 15 %, 72 % of SPY, 23 % of AAPL | SPX 89 %, SPY 83 %, AAPL 45 % pass 50 % |
-| Fit weight | **vega / (ask − bid)**, the residual in units of the half-spread in vol, in place of vega alone | Hentschel 2003: OTM IV errors are dominated by the option price error, so the spread measures each quote's precision; OptionMetrics weights its surface by vega | median OTM spread grows from 1 % (\|k\| ≤ 0.1) to 4 % (\|k\| ≤ 0.6) on SPX, 10 % to 69 % on AAPL |
+| Fit weight | **(vega / half-spread)²**: the residual counted in half-spreads of vol, in place of vega alone (§10, D4) | Hentschel 2003: OTM IV errors are dominated by the option price error, so the spread measures each quote's precision; OptionMetrics weights its surface by vega | median OTM spread grows from 1 % (\|k\| ≤ 0.1) to 4 % (\|k\| ≤ 0.6) on SPX, 10 % to 69 % on AAPL |
 | IV 2 %–300 % | **kept**, on our IV | Constantinides et al. cut at 5 %–100 % on the index; single stocks go above 100 % near expiry | — |
 | Moneyness 0.70 ≤ K/S ≤ 1.40 | **replaced** by the grid's band in ln(K/F), \|k\| ≤ 0.6 (`K_MIN`, `K_MAX`) | academic samples use K/S 0.8–1.2 (Constantinides et al.; Dumas, Fleming & Whaley) for a fit; Bergomi (§7.7) has listed SPX OTM strikes liquid from 50 % to 125 % | k = −0.6 is K/F = 0.55, wider than today's 0.70 on the put side |
 | Calendar per quote, at fixed strike | **dropped** | the condition holds at fixed forward moneyness (Reiner 2000 via Fengler 2009; Gatheral & Jacquier 2014): `select_surface_slices` (SVI) and the eSSVI conditions already enforce it on the fitted slices | — |
@@ -368,7 +368,10 @@ Order: L0 first, then L1 → L2 → L3 → L4 → L5 → L6 → L7. L1 and L2 on
   - Fallback when no European chain is stored that day: the SOFR curve. `data-ingest` builds it from the stored DTCC swaps or reads it from what quant-modeling builds (WP 23's `usd-sofr`); which one is settled in L3.
   - **Settled in L3 (2026-11-26):** neither. The fallback reads a curve directly from FRED: SOFR at the overnight point, then the Treasury CMT yields (§4.7).
   - A fallback day is flagged in `chain_iv_expiries`.
-- **D4 — Filter thresholds (§6): proposed in §6.1** after L0 (2026-11-26), awaiting the maintainer's decision.
+- **D4 — Filter thresholds (§6): §6.1 as proposed** (decided 2026-11-26, after L0).
+  - The fit weight is the spread's: the residual in vol counts in half-spreads of vol, so the least-squares weight is (vega / half-spread)², the inverse of the IV error's variance (Hentschel 2003), the spread undiscounted by DF and floored at 0.01 vol point. It applies to the SVI and eSSVI fits alike.
+  - The moneyness band is \|ln K/F\| ≤ 0.6.
+  - The butterfly check counts a violation beyond the three quotes' half-spreads only.
 - **D5 — A switch for the data, then E2 separately.**
   - `QM_OPTION_DATA=chain_iv|legacy` (default `legacy` until the maintainer switches), read by `market_snapshot`, the surface model in the calibration's cache key as for `QM_VOL_SURFACE`.
   - The switch goes live after a comparative measurement is presented (§8). Rollback needs no code change.
