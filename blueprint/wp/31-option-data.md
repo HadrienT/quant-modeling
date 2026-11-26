@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | *In progress*: decisions D1, D2, D3, D5 taken on 2026-11-26 (§10). The `data-ingest` lots L1–L4 and L8 are done (data-ingest #32, #33, issue data-ingest #31); what they measured, and where they depart from this design, is in §4.7. L0, L5–L7 to do. Issue #386 |
+| **Status** | *In progress*: decisions D1, D2, D3, D5 taken on 2026-11-26 (§10). The `data-ingest` lots L1–L4 and L8 are done (data-ingest #32, #33, issue data-ingest #31); what they measured, and where they depart from this design, is in §4.7. L0 done: thresholds proposed in §6.1 (D4). L5–L7 to do. Issue #386 |
 | **Depends on** | WP 08 (stored option chains, `RawVolSurface` cleaning), WP 30 (the eSSVI surface that consumes the quotes) |
 | **Unlocks** | WP 30 E2 (the API on eSSVI, #381): its measured price moves mean nothing until the quotes are right |
 | **Repositories** | `~/data-ingest` (ingestion, the new derived table) and this one (the consumer, the reduced cleaning) |
@@ -241,6 +241,26 @@ Each filter of the current pipeline, what it does, what is wrong with it, what t
 | *(absent)* stale quotes | — | no `last_trade_date` stored | — | stored and flagged (§3, §4.1) |
 | *(absent)* expiry type | — | SPY's end-of-quarter expiries are inconsistent; SPX and SPXW share dates | studies on OptionMetrics keep the standard monthlies only (Tan, Roberts & Zohren 2026) | rejected on their parity dispersion (§4.3), the root kept (§4.1) |
 
+### 6.1 D4: the thresholds proposed after L0
+
+What quant-modeling does with each `chain_iv` flag and each `CleaningParams` filter once it reads the clean data (L5). The sources are in §7.1. The shares are measured on the 2026-11-26 rows (the 2026-11-25 session), OTM side only.
+
+| Filter | Proposal | Source | Measured |
+|---|---|---|---|
+| Open interest / volume | **dropped** | no source filters a surface on the previous night's OI; Tan, Roberts & Zohren filter OI for portfolio formation, not for a surface | OI is 0 on SPX/XSP outside the session |
+| `no_bid` | **excluded**, and per expiry and side, nothing beyond two consecutive zero bids walking away from F | Cboe VIX methodology (the strip's stop rule); Constantinides, Jackwerth & Savov "Bid = 0"; Burkovska et al. §4.4 apply the same rule | 6.6 % of SPX, 10 % of SPY, 27 % of AAPL |
+| `below_two_ticks` | **excluded** (replaces `min_bid` 0.05 $) | Cohort et al. 2018; Hentschel 2003 §V: truncation at the tick biases deep OTM prices, so their IVs, upwards | 4 % SPX, 10 % SPY |
+| `wide_spread` (> 50 %) | **excluded**, threshold kept at 50 % | a 5 % or 15 % cut (Damircheli 2026) is for SPX only: it keeps 82 % of SPX at 15 %, 72 % of SPY, 23 % of AAPL | SPX 89 %, SPY 83 %, AAPL 45 % pass 50 % |
+| Fit weight | **vega / (ask − bid)**, the residual in units of the half-spread in vol, in place of vega alone | Hentschel 2003: OTM IV errors are dominated by the option price error, so the spread measures each quote's precision; OptionMetrics weights its surface by vega | median OTM spread grows from 1 % (\|k\| ≤ 0.1) to 4 % (\|k\| ≤ 0.6) on SPX, 10 % to 69 % on AAPL |
+| IV 2 %–300 % | **kept**, on our IV | Constantinides et al. cut at 5 %–100 % on the index; single stocks go above 100 % near expiry | — |
+| Moneyness 0.70 ≤ K/S ≤ 1.40 | **replaced** by the grid's band in ln(K/F), \|k\| ≤ 0.6 (`K_MIN`, `K_MAX`) | academic samples use K/S 0.8–1.2 (Constantinides et al.; Dumas, Fleming & Whaley) for a fit; Bergomi (§7.7) has listed SPX OTM strikes liquid from 50 % to 125 % | k = −0.6 is K/F = 0.55, wider than today's 0.70 on the put side |
+| Calendar per quote, at fixed strike | **dropped** | the condition holds at fixed forward moneyness (Reiner 2000 via Fengler 2009; Gatheral & Jacquier 2014): `select_surface_slices` (SVI) and the eSSVI conditions already enforce it on the fitted slices | — |
+| Butterfly on call mids | **replaced**: per expiry, European call equivalents of the OTM quotes (Black at our IV, F, DF), a violation counted only beyond the three quotes' half-spreads | Fengler 2009: the input needs not be arbitrage-free, a violation within the spreads is no arbitrage; Constantinides et al.'s IV filter removes outliers from a fitted curve, not every non-convexity | — |
+| `short_maturity` (< 7 days) | **excluded** | under 6–7 days dropped by Bakshi, Cao & Chen, Dumas, Fleming & Whaley, Constantinides et al.; the slice selection's `min_ttm` (18 days) already leaves them out of the surface | — |
+| `parity_outlier`, `expiry_rejected`, `iv_failed`, `not_otm` | **excluded** | Constantinides et al.'s put-call parity filter; `not_otm` is a diagnostic side by construction | 2 % SPX, 5.5 % SPY parity outliers |
+| `stale` | **not used** for now | the flag is wrong on a holiday: the 2026-11-26 (Thanksgiving) chain repeats the 25th's, and 80–100 % of SPY's and the stocks' quotes are flagged, against 0 % on the 24th and 25th; reported to `data-ingest` | — |
+| `rate_fallback` | **kept**, reported as a warning | — | every day before 2026-11-26 |
+
 ## 7. Literature review: good practice for option data (lot L0)
 
 **Goal.** Before coding, compare our choices (§4, §6) with the published practice and fix the thresholds on evidence. The output is this section completed with one line per source (what it does, what we take) and the thresholds of §6 confirmed or changed.
@@ -273,6 +293,34 @@ Each filter of the current pipeline, what it does, what is wrong with it, what t
 - whether the AM/PM settlement time matters at our horizons;
 - how vendors treat end-of-quarter and weekly expiries.
 
+### 7.1 What the sources say (L0, read on 2026-11-26)
+
+All fourteen are in `kbase` (AgenticEnv#82, PR AgenticEnv#83). One line per source, then what we take:
+
+| Source | What it does | What we take |
+|---|---|---|
+| Cboe, *Volatility Index Methodology* (2025) | OTM SPX/SPXW only, bid/ask mids, zero bids excluded, no strike past two consecutive zero bids; both sides averaged at K0; T in minutes, standard SPX at 09:30, SPXW at 16:00 | the zero-bid stop (§6.1); the AM/PM times, already in `ttm` (§4.7.10) |
+| OptionMetrics, *IvyDB US Reference Manual* v5.0 | 3:59 pm bid/ask mids; American IVs on a CRR tree with discrete projected dividends; zero curve interpolated linearly to the expiry; surface by vega-weighted kernel smoothing, options with vega below 0.5 left out | confirms §4.4's design (closing mids, tree, discrete dividends) and vega in the weight |
+| Jäckel, *Let's Be Rational* (2015) | Black inversion to machine precision in two iterations for every input | used in `data-ingest` (L2) |
+| Burkovska, Gaß, Glau, Mahlstedt, Schoutens & Wohlmuth (2018) | de-Americanization errors grow with rates, maturity, vol, and in the money; negligible at low rates, outliers at high rates; dividends left open | OTM only, as §2.4; D2 keeps de-Americanization off the S&P 500 path; SPY's surface is a cross-check only |
+| Andersen, Lake & Offengenden (2016) | American puts by spectral collocation on the exercise-boundary integral equation, about 100 times faster than the best trees at 1e-3–1e-4 | an option if the tree ever limits `data-ingest`'s run time; not needed now |
+| Barone-Adesi & Whaley (1987) | quadratic approximation of the early-exercise premium | not used: the tree is exact enough and cheap at our volumes |
+| Hentschel (2003) | IV errors: option price errors dominate OTM, the underlying's price ITM; rates and dividends matter only beyond a year; tick truncation biases deep OTM IVs up | OTM only; two-tick floor; spread as the fit's weight (§6.1) |
+| Bakshi, Cao & Chen (1997) | drops under 6 days, prices under 3/8 $, quotes after 15:00 CST (spot synchronicity), and arbitrage-bound violations | the minimum maturity; synchronicity is §3's point |
+| Dumas, Fleming & Whaley (1998) | drops under 6 and over 100 days; forward option prices; notes a dividend-certainty inconsistency across maturities | the minimum maturity |
+| Constantinides, Jackwerth & Savov (2013) | level 1: duplicates, bid = 0; level 2: 7–180 days, IV 5–100 %, K/S 0.8–1.2, implied rate < 0; level 3: IV outliers from a fitted curve, put-call parity outliers (about 90 bp of implied rate) | `no_bid`, `parity_outlier`, the IV sanity range, the butterfly as an outlier rule |
+| Fengler (2009) | arbitrage-free smoothing of call prices; calendar at fixed forward moneyness (Reiner 2000); input data need not be arbitrage-free | the calendar check moves to the fitted slices; the butterfly check tolerates the spreads |
+| Carr & Madan (1998); Demeterfi, Derman, Kamal & Zou (1999) | the log contract by a strip of OTM options | §8's variance-swap reference |
+| Andersen, Itkin & Kazbek (2026); Cohort et al. (2018); Gatheral & Jacquier (2014) | read before L0 (§7, list above) | — |
+
+Answers to the questions above:
+- **spread and tick**: two ticks of the product; 50 % kept as the cut, the spread enters the weight (§6.1);
+- **minimum maturity**: 7 days, already below the surface's `min_ttm`;
+- **dividends for the tree**: discrete and projected, as OptionMetrics does; built in L3;
+- **rate curve**: D3 as built (§4.7.3); OptionMetrics' zero curve is the same idea on its own instruments;
+- **AM/PM settlement**: Cboe counts it in minutes; `ttm` already carries it; it matters only on the shortest expiries, which the surface does not use;
+- **end-of-quarter and weeklies**: the academic samples keep the monthlies; Cboe's VIX uses the weeklies. We keep both, the parity checks deciding per expiry (§4.7.7).
+
 ## 8. Validation
 
 On every stored day, and as the acceptance of L2/L3/L5:
@@ -291,7 +339,7 @@ On every stored day, and as the acceptance of L2/L3/L5:
 
 | Lot | Repo | Content | Accepted when |
 |---|---|---|---|
-| L0 | AgenticEnv, this one | Literature review (§7): fetch, ingest, read; §6 and §7 completed | thresholds fixed on sources; this file updated |
+| L0 | AgenticEnv, this one | Literature review (§7): fetch, ingest, read; §6 and §7 completed | **Done** (2026-11-26): sources in §7.1, thresholds proposed in §6.1 (D4) |
 | L1 | `data-ingest` | Universe `^SPX`, `^XSP`; `contract_symbol`, root, `last_trade_date` stored; SPX and XSP strike coverage measured (it chooses D2's primary; the Cboe comparison was dropped); index level from `^GSPC`, already stored | **Done** (data-ingest #32): a day of SPX/XSP stored; coverage in `docs/option-coverage.md` |
 | L2 | `data-ingest` | `options-chain-iv`, European branch: parity forward and DF (§4.3), OTM, Black-76 by Jäckel, flags, registry, DAG task | **Done** (data-ingest #33): tests of §4.6 (round trip, European) passed; SPX/XSP day computed |
 | L3 | `data-ingest` | American branch: DF from SPX/XSP parity interpolated in T, SOFR fallback (D3); dividends (continuous for ETFs, discrete projected for stocks); tree de-Americanization; parity bounds; expiry rejection | **Done** (data-ingest #33): tests of §4.6 as amended in §4.7 |
@@ -320,7 +368,7 @@ Order: L0 first, then L1 → L2 → L3 → L4 → L5 → L6 → L7. L1 and L2 on
   - Fallback when no European chain is stored that day: the SOFR curve. `data-ingest` builds it from the stored DTCC swaps or reads it from what quant-modeling builds (WP 23's `usd-sofr`); which one is settled in L3.
   - **Settled in L3 (2026-11-26):** neither. The fallback reads a curve directly from FRED: SOFR at the overnight point, then the Treasury CMT yields (§4.7).
   - A fallback day is flagged in `chain_iv_expiries`.
-- **D4 — Filter thresholds (§6): open**, decided once L0 has read the sources.
+- **D4 — Filter thresholds (§6): proposed in §6.1** after L0 (2026-11-26), awaiting the maintainer's decision.
 - **D5 — A switch for the data, then E2 separately.**
   - `QM_OPTION_DATA=chain_iv|legacy` (default `legacy` until the maintainer switches), read by `market_snapshot`, the surface model in the calibration's cache key as for `QM_VOL_SURFACE`.
   - The switch goes live after a comparative measurement is presented (§8). Rollback needs no code change.
