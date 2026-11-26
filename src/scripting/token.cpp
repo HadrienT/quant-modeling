@@ -65,6 +65,10 @@ namespace quantModeling::scripting
                 return "'lastStepPut'";
             case TokenKind::LastStepDigital:
                 return "'lastStepDigital'";
+            case TokenKind::KnockOutAbove:
+                return "'knockOutAbove'";
+            case TokenKind::KnockOutBelow:
+                return "'knockOutBelow'";
             case TokenKind::ControlPays:
                 return "'controlPays'";
             case TokenKind::Schedule:

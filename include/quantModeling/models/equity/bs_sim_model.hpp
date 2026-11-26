@@ -5,6 +5,7 @@
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/market/discount_curve.hpp"
 #include "quantModeling/models/equity/black_scholes.hpp"
+#include "quantModeling/models/equity/knock_out.hpp"
 #include "quantModeling/models/equity/last_step.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
 #include "quantModeling/models/device_model.hpp"
@@ -159,11 +160,27 @@ namespace quantModeling
             {
                 const Step &st = steps_[i];
                 const T S_before = S;
+                // A knock-out at this date (#369): the step drawn conditioned
+                // on survival, its probability into the weight's slot.
+                const mc::KnockOutCorridor ko = mc::knock_out_corridor(defline_[i]);
+                T survival(1.0);
                 if (st.draws)
                 {
-                    const double z = gaussians[g++];
-                    S *= exp(st.drift + st.vol_sqrt_dt * z);
+                    if (ko.active())
+                    {
+                        using std::log;
+                        T z(gaussians[g++]);
+                        survival = mc::condition_on_survival(ko, T(log(S_before)), st.drift, st.vol_sqrt_dt, z);
+                        S *= exp(st.drift + st.vol_sqrt_dt * z);
+                    }
+                    else
+                    {
+                        const double z = gaussians[g++];
+                        S *= exp(st.drift + st.vol_sqrt_dt * z);
+                    }
                 }
+                else if (ko.active())
+                    survival = (S > ko.lo && S < ko.hi) ? T(1.0) : T(0.0);
 
                 Sample<T> &smp = path[i];
                 smp.spots.assign(1, S);
@@ -187,6 +204,8 @@ namespace quantModeling
                         const StepMonitor &b = mdef.monitors[k];
                         if (b.kind == StepQuantity::Survival)
                             smp.monitored[k] = mc::bridge_survival(S_before, S, b.level, b.above, var);
+                        else if (b.kind == StepQuantity::KnockOut)
+                            smp.monitored[k] = static_cast<std::ptrdiff_t>(k) == ko.slot ? survival : T(1.0);
                     }
                     if (mc::asks_last_step(mdef))
                         mc::fill_last_step(mdef, smp, st.draws ? T(S_before * exp(st.drift + 0.5 * var)) : S_before,

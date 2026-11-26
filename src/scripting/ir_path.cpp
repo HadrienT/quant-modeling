@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "quantModeling/engines/mc/script_path.hpp"
 
@@ -25,7 +26,11 @@ namespace quantModeling::scripting::ir
     std::string path_program_unsupported(const Script &script, DeviceModel::Kind kind, int n_assets)
     {
         std::string why = path_program_unsupported(kind, n_assets);
-        if (!why.empty() || !script.has_bridge)
+        if (!why.empty())
+            return why;
+        if (script.has_knock_out && n_assets != 1)
+            return "knockOutAbove() / knockOutBelow() cover one underlying";
+        if (!script.has_bridge)
             return why;
         if (n_assets != 1)
             return "survivalAbove() / survivalBelow() cover one underlying";
@@ -108,6 +113,12 @@ namespace quantModeling::scripting::ir
         l.event_cols = 2 + max_df + (max_fwd + 1);
         l.surv_col0 = l.step_cols;
         l.step_cols += 2 * l.n_surv;
+        if (script.has_knock_out)
+        {
+            l.knock_out = true;
+            l.ko_col0 = l.step_cols;
+            l.step_cols += 5;
+        }
         if (half)
         {
             if (kind != DeviceModel::Kind::LocalVol)
@@ -212,6 +223,19 @@ namespace quantModeling::scripting::ir
                         id = b.input(Op::State, l.last0() + 2 * a + (q.kind == StepQuantity::LastStepVariance ? 1 : 0));
                         break;
                     }
+                    if (q.kind == StepQuantity::KnockOut)
+                    {
+                        // The probability the step into the date left: in
+                        // the corridor's first slot, 1 in the others (they
+                        // multiply the same weight), as write_knock_out.
+                        if (!l.knock_out)
+                            throw InvalidInput("script IR: a knock-out in a layout without its state");
+                        std::size_t first = 0;
+                        while (event.quantities[first].kind != StepQuantity::KnockOut)
+                            ++first;
+                        id = slot == first ? b.input(Op::State, l.ko()) : b.constant(1.0);
+                        break;
+                    }
                     if (q.kind != StepQuantity::Survival)
                     {
                         id = last_step_expectation(b, l, q);
@@ -272,6 +296,8 @@ namespace quantModeling::scripting::ir
                 }
             for (int j = 0; j < l.n_surv; ++j)
                 out.outs.push_back({Op::State, l.surv0() + j, kPrimal, b.constant(1.0), false});
+            if (l.knock_out)
+                out.outs.push_back({Op::State, l.ko(), kPrimal, b.constant(1.0), false});
             return b.take();
         }
 
@@ -352,6 +378,69 @@ namespace quantModeling::scripting::ir
                               b.mul(bridge(j, S, S_mid, b.mul(var, half_w)),
                                     bridge(j, S_mid, S_next, b.mul(var, b.sub(b.constant(1.0), half_w))))));
             };
+            // A knock-out (#369): the draw z of a step S' = e^{ls + mean + sd
+            // z} conditioned on S' in the corridor the step row holds, as
+            // mc::condition_on_survival computes it operation for operation,
+            // and the survival probability. Inside a region on the step
+            // row's flag (#380): a step that reaches no knock-out date skips
+            // it -- the flag is the same for every path of a step, so the
+            // GPU's threads do not diverge -- keeps z itself, its bits, and
+            // leaves 1. Inside, every branch is computed on finite inputs and
+            // the path's selected.
+            const std::int32_t ko_one = l.knock_out ? b.constant(1.0) : -1;
+            // Opens the region; `then` computes the values the region gives
+            // a knock-out step, `otherwise` holds those of the other steps
+            // (defined before it); returns their phis.
+            const auto on_knock_out_step = [&](const auto &then, const std::vector<std::int32_t> &otherwise)
+            {
+                const std::int32_t head = b.raw(Op::If, data(l.ko_col0));
+                b.open_scope();
+                const std::vector<std::int32_t> values = then();
+                b.close_scope();
+                const std::int32_t mid = b.raw(Op::Else, head);
+                const std::int32_t end = b.raw(Op::EndIf, head);
+                b.at(mid).c = end;
+                b.at(head).b = mid;
+                b.at(head).c = end;
+                std::vector<std::int32_t> out_values;
+                for (std::size_t k = 0; k < values.size(); ++k)
+                    out_values.push_back(values[k] == otherwise[k] ? values[k]
+                                                                   : b.raw(Op::Phi, values[k], otherwise[k], head));
+                return out_values;
+            };
+            // The conditioned draw and the probability, inside the region.
+            const auto conditioned_draw = [&](std::int32_t z, std::int32_t ls, std::int32_t mean, std::int32_t sd)
+            {
+                const std::int32_t zero = b.constant(0.0), one = b.constant(1.0), half = b.constant(0.5);
+                const std::int32_t has_lo = data(l.ko_col0 + 1), has_hi = data(l.ko_col0 + 3);
+                const std::int32_t dl = b.div(b.sub(b.sub(data(l.ko_col0 + 2), ls), mean), sd);
+                const std::int32_t du = b.div(b.sub(b.sub(data(l.ko_col0 + 4), ls), mean), sd);
+                const auto N = [&](std::int32_t x)
+                { return b.value(Op::Ncdf, x); };
+                const std::int32_t A = b.select(has_lo, N(dl), zero), Ac = b.select(has_lo, N(b.neg(dl)), one);
+                const std::int32_t B = b.select(has_hi, N(du), one), Bc = b.select(has_hi, N(b.neg(du)), zero);
+                const std::int32_t p = b.select(b.value(Op::Lt, A, half), b.sub(B, A), b.sub(Ac, Bc));
+                const std::int32_t alive = b.value(Op::Gt, p, b.constant(1e-14));
+                const std::int32_t u = N(z), uc = N(b.neg(z));
+                const std::int32_t lower = b.value(Op::Le, u, half);
+                // the branch not taken reads 0.5: N^-1 stays finite there
+                const std::int32_t cdf = b.select(b.value(Op::And, alive, lower), b.add(A, b.mul(u, p)), half);
+                const std::int32_t sf =
+                    b.select(b.value(Op::And, alive, b.value(Op::Not, lower)), b.add(Bc, b.mul(uc, p)), half);
+                const std::int32_t zc =
+                    b.select(lower, b.value(Op::InvNcdf, cdf), b.neg(b.value(Op::InvNcdf, sf)));
+                return std::vector<std::int32_t>{b.select(alive, zc, z), b.select(alive, p, zero)};
+            };
+            // The step's draw at a knock-out date, conditioned; its weight
+            // into the state. `ls` gives ln S, computed inside the region.
+            const auto knock_out = [&](std::int32_t z, const auto &ls, std::int32_t mean, std::int32_t sd)
+            {
+                const std::vector<std::int32_t> v =
+                    on_knock_out_step([&]
+                                      { return conditioned_draw(z, ls(), mean, sd); }, {z, ko_one});
+                out(l.ko(), v[1]);
+                return v[0];
+            };
             const int n = l.n_assets;
             switch (l.kind)
             {
@@ -377,6 +466,9 @@ namespace quantModeling::scripting::ir
                                                           b.mul(b.mul(b.constant(0.5), vol), vol));
                             m = b.mul(mu, data(0)), sz = b.mul(vol, data(1));
                         }
+                        if (l.knock_out) // one asset (path_program_unsupported)
+                            z = knock_out(z, [&]
+                                          { return b.value(Op::Log, state(a)); }, m, sz);
                         const std::int32_t x = b.add(m, b.mul(sz, z));
                         last(a, state(a), m, sz);
                         const std::int32_t S_next = b.mul(state(a), exp(x));
@@ -393,7 +485,42 @@ namespace quantModeling::scripting::ir
                         b.mul(b.sub(b.sub(theta(l.th_rate), theta(l.th_div)), b.mul(b.mul(b.constant(0.5), sig), sig)),
                               data(1));
                     const std::int32_t vol_sqrt_dt = b.mul(sig, data(2));
-                    const std::int32_t S_next = b.mul(S, exp(b.add(drift, b.mul(vol_sqrt_dt, draw(0)))));
+                    std::int32_t S_next = -1;
+                    if (!l.knock_out)
+                        S_next = b.mul(S, exp(b.add(drift, b.mul(vol_sqrt_dt, draw(0)))));
+                    else if (!l.half) // LocalVolSimModel: local_vol_step on the conditioned draw
+                        S_next = b.mul(S, exp(b.add(drift, b.mul(vol_sqrt_dt, knock_out(draw(0), [&]
+                                                                                        { return b.value(Op::Log, S); }, drift, vol_sqrt_dt)))));
+                    else
+                    {
+                        // A coarse path conditioned on the fine one: only the
+                        // part of the step after the fine sub-step a is
+                        // conditioned, from S e^{drift w + sd a}, with the
+                        // fine path's own last draw (z - a) / sqrt(1 - w).
+                        // The CPU model conditions a step whose share w < 1
+                        // and takes w = a = 0 otherwise; so does this one.
+                        const std::int32_t S_plain = b.mul(S, exp(b.add(drift, b.mul(vol_sqrt_dt, draw(0)))));
+                        const std::vector<std::int32_t> v = on_knock_out_step(
+                            [&]
+                            {
+                                const std::int32_t split = b.value(Op::Lt, half_w, b.constant(1.0));
+                                const std::int32_t w = b.select(split, half_w, b.constant(0.0));
+                                const std::int32_t a = b.select(split, half_a, b.constant(0.0));
+                                const std::int32_t rest = b.sub(b.constant(1.0), w);
+                                const std::int32_t S_start =
+                                    b.mul(S, exp(b.add(b.mul(drift, w), b.mul(vol_sqrt_dt, a))));
+                                const std::int32_t mean = b.mul(drift, rest);
+                                const std::int32_t sd = b.mul(vol_sqrt_dt, b.value(Op::Sqrt, rest));
+                                const std::int32_t z2 = b.div(b.sub(draw(0), a), b.value(Op::Sqrt, rest));
+                                const std::vector<std::int32_t> c =
+                                    conditioned_draw(z2, b.value(Op::Log, S_start), mean, sd);
+                                return std::vector<std::int32_t>{b.mul(S_start, exp(b.add(mean, b.mul(sd, c[0])))),
+                                                                 c[1]};
+                            },
+                            {S_plain, ko_one});
+                        S_next = v[0];
+                        out(l.ko(), v[1]);
+                    }
                     out(0, S_next);
                     last(0, S, drift, vol_sqrt_dt);
                     if (l.n_surv > 0)
@@ -468,11 +595,15 @@ namespace quantModeling::scripting::ir
                         const std::int32_t K0s =
                             b.select(corrected, b.sub(b.neg(log_mgf), b.mul(b.add(K1, b.mul(half, K3)), V)), K0);
                         const std::int32_t var = b.add(b.mul(K3, V), b.mul(K4, v_next));
-                        const std::int32_t x =
-                            b.add(b.add(b.add(b.add(b.mul(b.sub(theta(l.th_rate), theta(l.th_div)), dt), K0s),
-                                              b.mul(K1, V)),
-                                        b.mul(K2, v_next)),
-                                  b.mul(b.value(Op::Sqrt, b.value(Op::Max, var, zero)), zs));
+                        const std::int32_t qe_mean =
+                            b.add(b.add(b.add(b.mul(b.sub(theta(l.th_rate), theta(l.th_div)), dt), K0s), b.mul(K1, V)),
+                                  b.mul(K2, v_next));
+                        const std::int32_t qe_sd = b.value(Op::Sqrt, b.value(Op::Max, var, zero));
+                        // a knock-out conditions the spot's draw given V' (mc::qe_variance_step)
+                        const std::int32_t zs_eff = l.knock_out ? knock_out(zs, [&]
+                                                                            { return b.value(Op::Log, S); }, qe_mean, qe_sd)
+                                                                : zs;
+                        const std::int32_t x = b.add(qe_mean, b.mul(qe_sd, zs_eff));
                         out(0, b.mul(S, exp(x)));
                         if (l.last_step) // as the Euler step leaves them: forward S e^{(r-q)dt}, L^2 v+ dt
                         {
@@ -489,12 +620,18 @@ namespace quantModeling::scripting::ir
                     const std::int32_t v_plus = b.value(Op::Max, V, b.constant(mc::variance_floor()));
                     const std::int32_t sqrt_v = b.value(Op::Sqrt, v_plus);
                     std::int32_t log_return = -1, m = -1, sz = -1;
+                    // the spot's draw, conditioned at a knock-out date; it
+                    // drives the variance below too (heston_variance_step)
+                    std::int32_t z_spot = draw(0);
                     if (slv) // (r - q - 0.5 L L v+) dt + L sqrt(v+) (sqrt(dt) z)
                     {
                         m = b.mul(b.sub(b.sub(theta(l.th_rate), theta(l.th_div)),
                                         b.mul(b.mul(b.mul(b.constant(0.5), lev), lev), v_plus)),
                                   dt);
-                        log_return = b.add(m, b.mul(b.mul(lev, sqrt_v), b.mul(sqdt, draw(0))));
+                        if (l.knock_out)
+                            z_spot = knock_out(z_spot, [&]
+                                               { return b.value(Op::Log, S); }, m, b.mul(b.mul(lev, sqrt_v), sqdt));
+                        log_return = b.add(m, b.mul(b.mul(lev, sqrt_v), b.mul(sqdt, z_spot)));
                         if (l.last_step)
                             sz = b.mul(b.mul(lev, sqrt_v), sqdt);
                     }
@@ -506,7 +643,10 @@ namespace quantModeling::scripting::ir
                             b.sub(b.sub(b.sub(theta(l.th_rate), theta(l.th_div)), b.mul(zero, zero)),
                                   b.mul(b.constant(0.5), v_plus));
                         m = b.mul(mu, dt);
-                        log_return = b.add(m, b.mul(sqrt_v, b.mul(sqdt, draw(0))));
+                        if (l.knock_out)
+                            z_spot = knock_out(z_spot, [&]
+                                               { return b.value(Op::Log, S); }, m, b.mul(sqrt_v, sqdt));
+                        log_return = b.add(m, b.mul(sqrt_v, b.mul(sqdt, z_spot)));
                         if (l.last_step)
                             sz = b.mul(sqrt_v, sqdt);
                     }
@@ -516,7 +656,7 @@ namespace quantModeling::scripting::ir
                     const int h = l.th_heston;
                     const std::int32_t rho = theta(h + 4);
                     const std::int32_t dW =
-                        b.add(b.mul(rho, draw(0)),
+                        b.add(b.mul(rho, z_spot),
                               b.mul(b.value(Op::Sqrt, b.sub(b.constant(1.0), b.mul(rho, rho))), draw(1)));
                     out(1, b.add(b.add(V, b.mul(b.mul(theta(h + 1), b.sub(theta(h + 2), v_plus)), dt)),
                                  b.mul(b.mul(theta(h + 3), sqrt_v), b.mul(sqdt, dW))));
@@ -628,6 +768,39 @@ namespace quantModeling::scripting::ir
                     row[2 * j] = used ? q->level : 1.0;
                     row[2 * j + 1] = used ? (q->above ? 1.0 : 0.0) : 1.0;
                 }
+            }
+        }
+
+        if (l.knock_out)
+        {
+            // The step that reaches a knock-out date: its corridor (the
+            // tightest level on each side, mc::knock_out_corridor), the logs
+            // of its levels; the other steps' flag is 0, their columns 0.
+            for (std::size_t s = 0; s < n_steps; ++s)
+            {
+                if (m.event[s] < 0)
+                    continue;
+                const Block &block =
+                    script.blocks[static_cast<std::size_t>(script.event_block[static_cast<std::size_t>(m.event[s])])];
+                double lo = 0.0, hi = std::numeric_limits<double>::infinity();
+                bool any = false;
+                for (const StepMonitor &q : block.quantities)
+                    if (q.kind == StepQuantity::KnockOut)
+                    {
+                        any = true;
+                        if (q.above)
+                            hi = std::min(hi, q.level);
+                        else
+                            lo = std::max(lo, q.level);
+                    }
+                if (!any)
+                    continue;
+                double *row = d.step_rows.data() + s * cols + l.ko_col0;
+                row[0] = 1.0;
+                row[1] = lo > 0.0 ? 1.0 : 0.0;
+                row[2] = lo > 0.0 ? std::log(lo) : 0.0;
+                row[3] = std::isfinite(hi) ? 1.0 : 0.0;
+                row[4] = std::isfinite(hi) ? std::log(hi) : 0.0;
             }
         }
 

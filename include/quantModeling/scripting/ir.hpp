@@ -12,6 +12,7 @@
 #include "quantModeling/core/sample.hpp"
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
+#include "quantModeling/utils/inverse_normal.hpp"
 #include "quantModeling/scripting/event.hpp"
 #include "quantModeling/scripting/exercise.hpp"
 #include "quantModeling/scripting/ir_grid.hpp"
@@ -117,8 +118,9 @@ namespace quantModeling::scripting::ir
         Exp,
         Sqrt,
         Abs,
-        Ncdf,   ///< the standard normal CDF, 0.5 erfc(-a / sqrt 2) (the last-step expectations, WP 27 §8 rung 1)
-        Smooth, ///< smooth(a, b): b <= 0 ? [a > 0] : clamp01((a + b) / (b + b))
+        Ncdf,    ///< the standard normal CDF, 0.5 erfc(-a / sqrt 2) (the last-step expectations, WP 27 §8 rung 1)
+        InvNcdf, ///< its inverse, inverse_normal_cdf(a) (a knock-out's conditioned draw, #369); the device's normcdfinv
+        Smooth,  ///< smooth(a, b): b <= 0 ? [a > 0] : clamp01((a + b) / (b + b))
         // ── crisp logic: 1.0 or 0.0 ─────────────────────────────────────────
         Eq,
         Ne,
@@ -240,6 +242,7 @@ namespace quantModeling::scripting::ir
             case Op::Sqrt:
             case Op::Abs:
             case Op::Ncdf:
+            case Op::InvNcdf:
             case Op::Not:
             case Op::Up:
             case Op::Tent:
@@ -351,6 +354,7 @@ namespace quantModeling::scripting::ir
         bool has_monitor = false;   ///< a Surv slot of any kind (what the CPU model fills)
         bool has_bridge = false;    ///< a bridge survival (survivalAbove / survivalBelow): one asset, BS or local vol
         bool has_last_step = false; ///< a last-step expectation: the paths compute it (WP 27 §14.9)
+        bool has_knock_out = false; ///< knockOutAbove / Below: the step into the date conditioned (#369), one asset
         bool has_exercise = false;  ///< exercise() / call() under a fitted rule (WP 26 §16); n_vars counts its flag
         bool has_forward = false;   ///< fwd(): the forward of spot(0), from the rate and the dividend
         /// Per event: the maturity of each of its fwd() slots, in slot order
@@ -654,6 +658,9 @@ namespace quantModeling::scripting::ir
                     break;
                 case Op::Ncdf:
                     r = 0.5 * std::erfc(-a * 0.70710678118654752440);
+                    break;
+                case Op::InvNcdf:
+                    r = inverse_normal_cdf(a);
                     break;
                 case Op::Smooth:
                     if (c <= 0.0)

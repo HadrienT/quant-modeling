@@ -564,6 +564,13 @@ class ScriptRequest(ScriptPricingInputs):
     """Price a payoff described in text."""
 
     script: str = Field(..., min_length=1, description="The script source text.")
+    knock_outs_as_thresholds: bool = Field(
+        False,
+        description="Price knockOutAbove / knockOutBelow as the thresholds they "
+        "stand for (if spot() >= L then the path is knocked out), smoothed "
+        "when `fuzzy`: the hard script, for a model that cannot condition its "
+        "step into a date, or for greeks smoothed at a width.",
+    )
 
 
 class ScriptedProductRequest(ScriptPricingInputs):

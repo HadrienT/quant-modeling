@@ -79,8 +79,10 @@ namespace quantModeling
             if (!def.monitors.empty())
                 throw InvalidInput(std::string(model) +
                                    " does not compute quantities over its steps: survivalAbove() / survivalBelow() "
-                                   "need Black-Scholes or local vol, lastStepCall() / lastStepPut() / "
-                                   "lastStepDigital() Black-Scholes, local vol, Heston or SLV");
+                                   "need Black-Scholes or local vol, knockOutAbove() / knockOutBelow() "
+                                   "Black-Scholes, local vol, Heston or SLV, "
+                                   "lastStepCall() / lastStepPut() / lastStepDigital() Black-Scholes, local vol, "
+                                   "Heston or SLV");
     }
 
     /// Throws when the defline asks for a bridge survival (survivalAbove /
@@ -94,6 +96,20 @@ namespace quantModeling
                     throw InvalidInput(std::string(model) +
                                        " does not monitor barriers between dates: survivalAbove() / survivalBelow() "
                                        "need Black-Scholes or local vol");
+    }
+
+    /// Throws when the defline asks for a conditioned knock-out
+    /// (knockOutAbove / knockOutBelow, issue #369): for a model whose step
+    /// into a date is not lognormal given the path (rough Bergomi, jumps,
+    /// Hull-White's equity).
+    inline void refuse_knock_outs(const std::vector<SampleDef> &defline, const char *model)
+    {
+        for (const SampleDef &def : defline)
+            for (const StepMonitor &b : def.monitors)
+                if (b.kind == StepQuantity::KnockOut)
+                    throw InvalidInput(std::string(model) +
+                                       " does not condition its steps on a knock-out: knockOutAbove() / "
+                                       "knockOutBelow() need Black-Scholes, local vol, Heston or SLV");
     }
 
     /// Checks the barriers a model that monitors them is asked for: each one

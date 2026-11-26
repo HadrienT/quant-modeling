@@ -384,6 +384,7 @@ if(QM_BUILD_TESTS)
     tests/testSimModelClone.cpp
     tests/testBarrierMonitoring.cpp
     tests/testLastStep.cpp
+    tests/testKnockOut.cpp
     tests/testAnalyticControls.cpp
     tests/testScriptParser.cpp
     tests/testScriptEval.cpp

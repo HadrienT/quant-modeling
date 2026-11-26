@@ -89,7 +89,7 @@ namespace quantModeling::mc
     inline bool asks_last_step(const SampleDef &def)
     {
         for (const StepMonitor &b : def.monitors)
-            if (b.kind != StepQuantity::Survival)
+            if (b.kind != StepQuantity::Survival && b.kind != StepQuantity::KnockOut)
                 return true;
         return false;
     }
@@ -113,6 +113,7 @@ namespace quantModeling::mc
             switch (def.monitors[b].kind)
             {
                 case StepQuantity::Survival:
+                case StepQuantity::KnockOut: // the model's conditioned step (knock_out.hpp)
                     break;
                 case StepQuantity::LastStepForward:
                     smp.monitored[b] = forward;

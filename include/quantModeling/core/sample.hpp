@@ -36,6 +36,14 @@ namespace quantModeling
     ///    lastStep*() whose strike the script computes (a fixing of the path
     ///    times a term): the payoff then applies Black's formula itself
     ///    (models/equity/last_step_black.hpp). `level` is unused.
+    ///  - `KnockOut` (knockOutAbove / knockOutBelow, issue #369): the
+    ///    probability p that the model's last step into this date leaves the
+    ///    spot of `asset` on the safe side of `level` (below it when `above`,
+    ///    the barrier knocking out above; above it otherwise), given the path
+    ///    before the step. The model then draws that step conditioned on
+    ///    survival (Glasserman & Staum 2001): z from the normal truncated to
+    ///    the safe side. Several knock-outs on one asset at one date make a
+    ///    corridor: the first slot holds its probability, the others 1.
     enum class StepQuantity : unsigned char
     {
         Survival,
@@ -44,6 +52,7 @@ namespace quantModeling
         LastStepDigital,
         LastStepForward,
         LastStepVariance,
+        KnockOut,
     };
 
     /// One slot of Sample::monitored: a quantity the model computes over its
@@ -52,7 +61,7 @@ namespace quantModeling
     {
         Real level = 0.0;
         std::size_t asset = 0;
-        bool above = true; ///< Survival only
+        bool above = true; ///< Survival and KnockOut only
         StepQuantity kind = StepQuantity::Survival;
 
         bool operator==(const StepMonitor &) const = default;

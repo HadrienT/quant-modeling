@@ -106,6 +106,7 @@ namespace quantModeling::scripting
             max_surv_ = std::max(max_surv_, static_cast<std::int32_t>(n.slot));
             p_.has_monitor = true;
             p_.has_bridge = p_.has_bridge || n.kind == StepQuantity::Survival;
+            p_.has_knock_out = p_.has_knock_out || n.kind == StepQuantity::KnockOut;
             if (n.computed_strike()) // the script's strike, then the step's forward and variance (issue #363)
             {
                 max_surv_ = std::max(max_surv_, static_cast<std::int32_t>(n.var_slot));

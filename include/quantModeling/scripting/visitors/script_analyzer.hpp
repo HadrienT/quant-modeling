@@ -69,6 +69,15 @@ namespace quantModeling::scripting
         /// the last step's volatility, which a square-root variance that
         /// breaks Feller brings near zero (withhold_last_step_digital_greeks).
         bool last_step_digital = false;
+
+        /// The script has a knockOutAbove / knockOutBelow (#369): its
+        /// weight's pathwise derivative divides by the step's volatility,
+        /// as lastStepDigital's (withhold_last_step_digital_greeks).
+        bool knock_out = false;
+
+        /// The knock-outs are priced as their thresholds because a level is
+        /// not known today (a forward start; ScriptedProduct, #369 L2).
+        bool knock_outs_on_thresholds = false;
     };
 
     namespace detail
@@ -163,6 +172,17 @@ namespace quantModeling::scripting
                 // model like the survivals.
                 if (const auto *s = dynamic_cast<const NodeStepQuantity *>(&n))
                 {
+                    // A knock-out (#369) is a barrier at its date that the
+                    // model conditions its step on: path-dependent like a
+                    // barrier on dates, and taken by Black-Scholes, local
+                    // vol, Heston and SLV -- it steers the model as the hard
+                    // barrier it replaces does.
+                    if (s->kind == StepQuantity::KnockOut)
+                    {
+                        out.knock_out = out.path_dependent = out.nonlinear_in_spot = true;
+                        out.spot_threshold_test = true;
+                        return;
+                    }
                     const bool survival = s->kind == StepQuantity::Survival;
                     (survival ? out.barrier_monitoring : out.last_step) = true;
                     out.nonlinear_in_spot = true;

@@ -129,6 +129,7 @@ namespace quantModeling
         void init(const TimeLine &product_timeline, const std::vector<SampleDef> &defline) override
         {
             refuse_bridge_survivals(defline, "HullWhiteEquitySimModel"); // lastStep*: generate_path
+            refuse_knock_outs(defline, "HullWhiteEquitySimModel");
             timeline_ = canonical_timeline(product_timeline);
             defline_ = defline;
             steps_.clear();

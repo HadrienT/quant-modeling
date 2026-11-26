@@ -22,7 +22,10 @@ header the site reads:
                                        lastStepDigital: its own greeks, except
                                        under the models where they fail
                                        (LAST_STEP_FALLBACK_MODELS), which take
-                                       them from the threshold smoothed at eps)
+                                       them from the threshold smoothed at eps;
+                                       or "knock-out", for a script on
+                                       knockOutAbove / Below: the same, the
+                                       thresholds the knock-outs stand for)
     # curve: sofr                      (optional, rates only: the USD SOFR
                                        curve of the traded swaps, Hull-White
                                        calibrated to the traded swaptions)
@@ -104,6 +107,17 @@ class Template:
     #: follow-up), or "last-step" (smoothed_last_step).
     eps: float | None = None
     greeks: str = "joint"
+    #: Signed parts (#369 L2b): (+1 or -1, script), the product's price
+    #: their signed sum -- a knock-in as the vanilla less the knock-out,
+    #: E[1{hit} f] = E[f] - E[1{alive} f], since the paths a knock-out's
+    #: conditioned step simulates never touch the barrier. Written after the
+    #: script in "# part: +" / "# part: -" sections, the same terms and the
+    #: same dates; the Price page's Monte-Carlo prices them (render_parts),
+    #: every other use reads `script`, the product as one hard script.
+    parts: tuple = ()
+
+
+_PART = re.compile(r"^# part: ([+-])\s*(.*)$")
 
 
 def parse(slug: str, text: str) -> Template:
@@ -111,9 +125,14 @@ def parse(slug: str, text: str) -> Template:
     sources: List[str] = []
     params: List[Param] = []
     body: List[str] = []
+    parts: List[tuple] = []
     for line in text.splitlines():
         m, p = _META.match(line), _PARAM.match(line)
-        if p:
+        if (q := _PART.match(line)) is not None:
+            parts.append((1 if q.group(1) == "+" else -1, []))
+        elif parts:
+            parts[-1][1].append(line)
+        elif p:
             name, default, unit, label = p.groups()
             if unit not in UNITS:
                 raise ValueError(f"{slug}: unknown unit '{unit}' for {name}")
@@ -141,13 +160,30 @@ def parse(slug: str, text: str) -> Template:
         curve=meta.get("curve", "government"),
         eps=float(meta["eps"]) if "eps" in meta else None,
         greeks=meta.get("greeks", "joint"),
+        parts=tuple(
+            (sign, "\n".join(lines).strip("\n") + "\n") for sign, lines in parts
+        ),
     )
-    if t.greeks not in ("joint", "separate", "last-step"):
-        raise ValueError(f"{slug}: greeks must be 'joint', 'separate' or 'last-step'")
+    if t.greeks not in ("joint", "separate", "last-step", "knock-out"):
+        raise ValueError(
+            f"{slug}: greeks must be 'joint', 'separate', 'last-step' or 'knock-out'"
+        )
+    if t.greeks == "knock-out" and (t.eps is None or "knockOut" not in t.script):
+        raise ValueError(
+            f"{slug}: greeks 'knock-out' needs eps and knockOutAbove / knockOutBelow"
+        )
     if t.greeks == "last-step" and (t.eps is None or "lastStepDigital" not in t.script):
         raise ValueError(f"{slug}: greeks 'last-step' needs eps and lastStepDigital")
     if t.eps is not None and not t.eps > 0:
         raise ValueError(f"{slug}: eps must be positive")
+    span = lambda s: (min(_ISO.findall(s)), max(_ISO.findall(s)))  # noqa: E731
+    for sign, part in t.parts:
+        # render dates every part from its first date and stretches it to
+        # its last: the parts must span the script's dates exactly
+        if not _ISO.findall(part) or span(part) != span(t.script):
+            raise ValueError(
+                f"{slug}: a part must start and end on the script's first and last dates"
+            )
     if t.market not in ("equity", "rates"):
         raise ValueError(f"{slug}: unknown market '{t.market}'")
     if t.curve not in ("government", "sofr"):
@@ -324,6 +360,36 @@ def render(
     years, written period by period, and `expiry` the years to the
     swaption's (first) exercise."""
     t = get(slug)
+    return _render_text(
+        t, t.script, terms, valuation_date, lead_days, maturity, expiry, start
+    )
+
+
+def render_parts(
+    slug: str,
+    terms: Mapping[str, float],
+    valuation_date: date,
+    lead_days: int = LEAD_DAYS,
+    maturity: float | None = None,
+    expiry: float | None = None,
+    start: date | None = None,
+) -> List[tuple]:
+    """The product's signed parts (Template.parts), each rendered as render
+    renders the script: (sign, script). Empty for a product of one script."""
+    t = get(slug)
+    return [
+        (
+            sign,
+            _render_text(
+                t, s, terms, valuation_date, lead_days, maturity, expiry, start
+            ),
+        )
+        for sign, s in t.parts
+    ]
+
+
+def _render_text(t, script, terms, valuation_date, lead_days, maturity, expiry, start):
+    slug = t.slug
     names = {p.name for p in t.params}
     unknown = set(terms) - names
     if unknown:
@@ -331,7 +397,6 @@ def render(
             f"'{slug}' has no term {', '.join(sorted(unknown))} "
             f"(its terms: {', '.join(sorted(names)) or 'none'})"
         )
-    script = t.script
     if slug in RATES_GENERATED and (maturity is not None or expiry is not None):
         tenor = int(round(maturity)) if maturity is not None else 5
         if not 1 <= tenor <= 30 or (
@@ -406,6 +471,11 @@ __all__ = [
 #: closed form over a step, the slot is the threshold itself and the delta
 #: reads zero.
 LAST_STEP_FALLBACK_MODELS = ("heston", "slv", "rough_bergomi")
+
+#: The models that cannot condition their step on a knock-out (#369):
+#: their step into a date is not lognormal given the path. A library
+#: product on knockOutAbove / Below is priced on the thresholds there.
+KNOCK_OUT_THRESHOLD_MODELS = ("rough_bergomi", "hull_white")
 
 
 def smoothed_last_step(script: str, eps: float) -> str:

@@ -17,6 +17,7 @@
 #include "quantModeling/scripting/fuzzy_evaluator.hpp"
 #include "quantModeling/scripting/node.hpp"
 #include "quantModeling/scripting/parser.hpp"
+#include "quantModeling/scripting/visitors/knock_outs.hpp"
 #include "quantModeling/scripting/visitors/step_monitor_resolver.hpp"
 #include "quantModeling/scripting/visitors/const_cond.hpp"
 #include "quantModeling/scripting/visitors/defline_builder.hpp"
@@ -119,6 +120,10 @@ namespace quantModeling
         /// the library writes (pricers/script_builders); a script a user
         /// wrote keeps its numbers as constants. Same bits either way.
         bool terms_as_parameters = false;
+        /// knockOutAbove / Below as the thresholds they stand for (#369 L2):
+        /// the hard script -- smoothed when `fuzzy` -- for a model that
+        /// cannot condition its step, or greeks smoothed at a width.
+        bool knock_outs_as_thresholds = false;
         /// With `fuzzy`: a C1 ramp for the smoothed comparisons -- the
         /// clamped linear ramp u replaced by u^2 (3 - 2 u), whose slope is 0
         /// where it meets 0 and 1 -- so that the smoothed payoff has a second
@@ -184,6 +189,18 @@ namespace quantModeling
                              [](const scripting::Event &a,
                                 const scripting::Event &b)
                              { return a.date < b.date; });
+            // knockOutAbove / Below (issue #369): the weight variable, its
+            // start at 1, and every later payment multiplied by it.
+            // A knock-out whose level is not known today (a forward start)
+            // cannot be conditioned on: then every knock-out is priced as
+            // its threshold, and the analysis says so (#369 L2).
+            const auto n_past = static_cast<std::size_t>(
+                std::count_if(events.begin(), events.end(), [&](const scripting::Event &e)
+                              { return ctx.t(e.date) <= TIMELINE_EPS; }));
+            const bool forced_thresholds = !settings.knock_outs_as_thresholds &&
+                                           !scripting::knock_out_levels_known_today(events, n_past);
+            const bool knock_outs = scripting::prepare_knock_outs(
+                events, settings.knock_outs_as_thresholds || forced_thresholds);
 
             scripting::VarIndexer indexer;
             indexer.index(events);
@@ -204,6 +221,7 @@ namespace quantModeling
                 std::count_if(events.begin(), events.end(), [&](const scripting::Event &e)
                               { return ctx.t(e.date) <= TIMELINE_EPS; }));
             analysis_ = scripting::analyze_script(events, n_historical);
+            analysis_.knock_outs_on_thresholds = forced_thresholds;
 
             resolve_timeline(std::move(events), ctx);
 
@@ -245,14 +263,9 @@ namespace quantModeling
             }
             policy_.issuer = has_exercise_ && exercises.front()->issuer;
 
-            const std::vector<std::vector<Time>> discount_mats =
-                scripting::DiscountLookupResolver(ctx).resolve(events_);
-            const std::vector<std::vector<StepMonitor>> barriers =
-                scripting::StepMonitorResolver().resolve(events_);
-            const std::vector<std::vector<Time>> forward_mats =
-                scripting::ForwardLookupResolver(ctx).resolve(events_);
-            defline_ = scripting::build_defline(events_, discount_mats, barriers, forward_mats);
-
+            if (knock_outs && scripting::has_knock_out(historical_events_))
+                throw InvalidInput("knockOutAbove() / knockOutBelow() on a past date: the path up to the "
+                                   "valuation date is known; script the barrier on the fixings instead");
             const std::vector<std::vector<Time>> historical_mats =
                 scripting::DiscountLookupResolver(ctx).resolve(historical_events_);
             for (std::size_t i = 0; i < historical_mats.size(); ++i)
@@ -277,6 +290,26 @@ namespace quantModeling
                                        "): the path between past fixings is not known; script the barrier "
                                        "on the fixings instead");
 
+            // The historical fixings first: a knock-out's level may read
+            // them (`barrier * s0`, s0 struck on a past date).
+            if (!historical_events_.empty())
+                baseline_ = replay_historical(indexer.count(), historical_fixings);
+            if (knock_outs)
+            {
+                std::vector<double> known(baseline_.size());
+                for (std::size_t v = 0; v < known.size(); ++v)
+                    known[v] = to_double(baseline_[v]);
+                scripting::resolve_knock_out_levels(events_, known, indexer.count());
+            }
+
+            const std::vector<std::vector<Time>> discount_mats =
+                scripting::DiscountLookupResolver(ctx).resolve(events_);
+            const std::vector<std::vector<StepMonitor>> barriers =
+                scripting::StepMonitorResolver().resolve(events_);
+            const std::vector<std::vector<Time>> forward_mats =
+                scripting::ForwardLookupResolver(ctx).resolve(events_);
+            defline_ = scripting::build_defline(events_, discount_mats, barriers, forward_mats);
+
             if (settings.fuzzy)
             {
                 auto fuzzy = std::make_unique<scripting::FuzzyEvaluator<T>>();
@@ -288,10 +321,7 @@ namespace quantModeling
             evaluator_->set_variable_count(indexer.count());
 
             if (!historical_events_.empty())
-            {
-                baseline_ = replay_historical(indexer.count(), historical_fixings);
                 evaluator_->set_baseline(baseline_);
-            }
 
             // Early exercise compiles too (WP 26 §15): the bytecode decides
             // with the fitted rule, the pilot stays on the tree evaluator. It

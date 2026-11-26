@@ -4,6 +4,7 @@
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/equity/knock_out.hpp"
 #include "quantModeling/models/equity/last_step.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
 #include "quantModeling/models/device_model.hpp"
@@ -70,7 +71,7 @@ namespace quantModeling
         /// caches pointers into *this* object's own members, so a naive
         /// copy would leave them pointing at the original.
         LocalVolSimModel(const LocalVolSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), sigma_loc_(other.sigma_loc_), max_dt_(other.max_dt_), refinement_(other.refinement_), milstein_(other.milstein_), has_last_step_(other.has_last_step_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), sigma_loc_(other.sigma_loc_), max_dt_(other.max_dt_), refinement_(other.refinement_), milstein_(other.milstein_), has_last_step_(other.has_last_step_), has_knock_out_(other.has_knock_out_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
         {
             set_param_pointers();
         }
@@ -85,6 +86,18 @@ namespace quantModeling
             defline_ = defline;
             check_barrier_assets(defline_, 1, "LocalVolSimModel");
             has_last_step_ = mc::asks_last_step(defline_);
+            has_knock_out_ = false;
+            for (const SampleDef &d : defline_)
+                if (mc::asks_knock_out(d))
+                {
+                    has_knock_out_ = true;
+                    // The conditioned step is no longer lognormal given the
+                    // path before it: Black's formula over it would be wrong.
+                    if (mc::asks_last_step(d))
+                        throw InvalidInput("knockOutAbove() / knockOutBelow() and lastStepCall() / lastStepPut() "
+                                           "/ lastStepDigital() on the same date: the knock-out conditions the "
+                                           "step the last-step expectation integrates over");
+                }
 
             event_index_of_step_ = event_index_of_step(sim_timeline_, timeline_);
 
@@ -152,6 +165,9 @@ namespace quantModeling
             if (has_last_step_ && milstein_)
                 throw InvalidInput("LocalVolSimModel: lastStepCall() / lastStepPut() / lastStepDigital() need the "
                                    "log-Euler step, whose last step is lognormal; the Milstein step is not");
+            if (has_knock_out_ && milstein_)
+                throw InvalidInput("LocalVolSimModel: knockOutAbove() / knockOutBelow() need the log-Euler step, "
+                                   "whose step into the date is lognormal; the Milstein step is not");
 
             // Barrier monitoring (WP 26 P2): each event's survivals are the
             // product of the bridge survivals over the fine steps since the
@@ -177,10 +193,6 @@ namespace quantModeling
                 const Time dt = t - t_prev;
 
                 const T S_before = S;
-                const T var = milstein_ ? mc::local_vol_milstein_step(grid(), r_, q_, S, t, dt, gaussians[k])
-                                        : mc::local_vol_step(grid(), r_, q_, S, t, dt, gaussians[k]);
-                t_prev = t;
-
                 // Conditioned on the fine path (condition_on_fine_half_steps):
                 // the step is S_before e^{drift + sd z}, z = a + sqrt(1 - w) z',
                 // so its first w of the way ends at the midpoint below (the
@@ -188,6 +200,37 @@ namespace quantModeling
                 // end is lognormal around a with log-variance var (1 - w).
                 const bool conditioned = !half_.empty() && share_[k] < 1.0;
                 const double a = conditioned ? half_[k] : 0.0, w = conditioned ? share_[k] : 0.0;
+
+                // A knock-out at the date this step reaches (#369): the step,
+                // or on a coarse path conditioned on the fine one its part
+                // after the fine sub-step a (z' above, the fine path's own
+                // last draw), drawn conditioned on survival.
+                const std::ptrdiff_t reached = event_index_of_step_[k];
+                const mc::KnockOutCorridor ko = has_knock_out_ && reached >= 0
+                                                    ? mc::knock_out_corridor(defline_[static_cast<std::size_t>(reached)])
+                                                    : mc::KnockOutCorridor{};
+                T var, survival(1.0);
+                if (ko.active())
+                {
+                    using std::log;
+                    const T sig = mc::local_vol_bilinear(grid(), S, t);
+                    const T step_drift = (r_ - q_ - 0.5 * sig * sig) * dt; // local_vol_step's
+                    const T vol_sqrt_dt = sig * sqrt(dt);
+                    var = vol_sqrt_dt * vol_sqrt_dt;
+                    const double rest = 1.0 - w; // the conditioned share of the step
+                    const T S_start = conditioned ? T(S_before * exp(step_drift * w + vol_sqrt_dt * a)) : S_before;
+                    const T mean = step_drift * rest, sd = vol_sqrt_dt * sqrt(rest);
+                    T z((gaussians[k] - a) / sqrt(rest));
+                    survival = mc::condition_on_survival(ko, T(log(S_start)), mean, sd, z);
+                    if (conditioned)
+                        S = S_start * exp(mean + sd * z);
+                    else // the plain step on the conditioned draw: the IR's step, bit for bit
+                        mc::local_vol_step(grid(), r_, q_, S, t, dt, z);
+                }
+                else
+                    var = milstein_ ? mc::local_vol_milstein_step(grid(), r_, q_, S, t, dt, gaussians[k])
+                                    : mc::local_vol_step(grid(), r_, q_, S, t, dt, gaussians[k]);
+                t_prev = t;
                 const T drift = (r_ - q_) * dt - 0.5 * var; // local_vol_step's, (r - q - sigma^2 / 2) dt
 
                 if (next < defline_.size())
@@ -206,9 +249,11 @@ namespace quantModeling
                                            : mc::bridge_survival(S_before, S, bars[b].level, bars[b].above, var);
                 }
 
-                const std::ptrdiff_t event = event_index_of_step_[k];
+                const std::ptrdiff_t event = reached;
                 if (event < 0)
                     continue;
+                if (ko.active())
+                    path[static_cast<std::size_t>(event)].monitored[static_cast<std::size_t>(ko.slot)] = survival;
                 if (has_last_step_) // this step reaches the event: log-Euler, forward S_before e^{(r - q) dt}
                 {
                     const SampleDef &d = defline_[static_cast<std::size_t>(event)];
@@ -330,6 +375,7 @@ namespace quantModeling
         int refinement_ = 1; // multilevel Monte Carlo: each max_dt step split in r
         bool milstein_ = false;
         bool has_last_step_ = false; ///< the defline asks for a lastStep*() expectation
+        bool has_knock_out_ = false; ///< the defline asks for a knock-out (#369)
 
         TimeLine timeline_;     // the product's own event dates
         TimeLine sim_timeline_; // timeline_ plus internal Euler steps
