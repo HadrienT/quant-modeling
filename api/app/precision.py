@@ -121,7 +121,19 @@ def delta_sigma(
             "no two-sided quote with an implied vol in the stored chain"
         )
     expiry = min({q.ttm for q in usable}, key=lambda t: abs(t - horizon))
-    fwd = spot * math.exp((rate - dividend) * expiry)
+    # The expiry's own forward and discount when the quotes carry them
+    # (options.chain_iv, WP 31), else the flat carry.
+    stored = next(
+        (q for q in usable if q.ttm == expiry and getattr(q, "forward", 0.0) > 0.0),
+        None,
+    )
+    fwd = stored.forward if stored else spot * math.exp((rate - dividend) * expiry)
+    # Discounted forward, the vega's scale: S exp(-q T) on the flat carry.
+    scale = (
+        stored.discount * stored.forward
+        if stored
+        else spot * math.exp(-dividend * expiry)
+    )
     for band in (0.10, 0.20):
         by_strike: dict = {}
         vols = []
@@ -130,7 +142,7 @@ def delta_sigma(
                 continue
             sig, t = q.implied_vol, q.ttm
             d1 = (math.log(fwd / q.strike) + 0.5 * sig * sig * t) / (sig * math.sqrt(t))
-            vega = spot * math.exp(-dividend * t) * _norm_pdf(d1) * math.sqrt(t)
+            vega = scale * _norm_pdf(d1) * math.sqrt(t)
             if vega <= 0.0:
                 continue
             half = 0.5 * (q.ask - q.bid) / vega

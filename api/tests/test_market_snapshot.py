@@ -82,7 +82,7 @@ def fake(monkeypatch):
         "qm",
         types.SimpleNamespace(
             RawOptionQuote=FakeQuote,
-            CleaningParams=lambda: None,
+            CleaningParams=types.SimpleNamespace,
             calibrate_vol_surface=calibrate,
         ),
     )
