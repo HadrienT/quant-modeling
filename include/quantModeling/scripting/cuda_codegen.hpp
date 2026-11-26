@@ -90,8 +90,9 @@ namespace quantModeling::scripting
     /// `qe`: a Heston or SLV price kernel steps the variance by QE (#317).
     /// `half`: multilevel's coarse path conditioned on the fine one
     /// (ir::PathLayout::half, WP 26 §26.2), local vol only.
+    /// `milstein`: local vol, Milstein before the dates (#371); price only.
     CudaSource cuda_path_source(const ir::Script &script, int model_kind, int n_assets, PathKernel kernel,
-                                bool qe = false, bool half = false);
+                                bool qe = false, bool half = false, bool milstein = false);
 
     /**
      * What one compiled kernel serves: the model and the sampling options of

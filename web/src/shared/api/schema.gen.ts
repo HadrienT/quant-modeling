@@ -7220,6 +7220,12 @@ export interface components {
              */
             importance_sampling: boolean;
             /**
+             * Knock Outs As Thresholds
+             * @description Price knockOutAbove / knockOutBelow as the thresholds they stand for (if spot() >= L then the path is knocked out), smoothed when `fuzzy`: the hard script, for a model that cannot condition its step into a date, or for greeks smoothed at a width.
+             * @default false
+             */
+            knock_outs_as_thresholds: boolean;
+            /**
              * Milstein
              * @description model='local_vol': the Milstein step instead of log-Euler (strong order 1; with mlmc_eps, the levels' variance decays as h^2 on a smooth surface). CPU only. Not advised on a calibrated market grid: where the local vol's slope is steep at the edge of the quoted strikes, it makes the levels' coupling worse (blueprint WP 26 §9.2).
              * @default false

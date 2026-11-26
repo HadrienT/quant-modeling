@@ -175,6 +175,13 @@ namespace quantModeling::scripting
             out.push_back({"surface_extrapolated", "warning", buf});
         }
 
+        if (a.knock_outs_on_thresholds)
+            out.push_back({"knock_outs_as_thresholds", "info",
+                           "A knock-out level depends on a fixing still to come (a forward start), so the model "
+                           "cannot condition its steps on it: the knock-outs are priced as the thresholds they "
+                           "stand for, the spot tested at each date. Their greeks are those of a hard threshold: "
+                           "turn on Fuzzy to smooth them."});
+
         return out;
     }
 
@@ -343,7 +350,7 @@ namespace quantModeling::scripting
                                                                    const ScriptAnalysis &a,
                                                                    const HestonParams &h, ModelKind model)
     {
-        if (!a.last_step_digital)
+        if (!a.last_step_digital && !a.knock_out)
             return std::nullopt;
         if (model != ModelKind::Heston && model != ModelKind::StochasticLocalVol)
             return std::nullopt;
@@ -351,10 +358,11 @@ namespace quantModeling::scripting
         if (feller >= 1.0 || risks.labels.empty())
             return std::nullopt;
         risks = RiskReport{};
-        char buf[640];
+        char buf[768];
         std::snprintf(buf, sizeof buf,
-                      "No greeks: lastStepDigital's pathwise derivatives divide by the volatility "
-                      "of the model's last step, and the calibrated variance breaks the Feller "
+                      "No greeks: lastStepDigital's and knockOutAbove / Below's pathwise derivatives "
+                      "divide by the volatility of the model's step into the date, and the calibrated "
+                      "variance breaks the Feller "
                       "condition (2 kappa theta / xi^2 = %.2f, below 1), so that volatility comes "
                       "near zero and the greeks have infinite variance: neither their value nor "
                       "their error could be trusted. The price is unaffected. For greeks, price "

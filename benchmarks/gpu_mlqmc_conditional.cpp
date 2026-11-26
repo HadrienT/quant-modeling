@@ -18,6 +18,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -45,6 +47,28 @@ namespace
         s.sigma_loc_flat = {0.80, 0.70, 0.60, 0.45, 0.40, 0.35, 0.25, 0.24, 0.22,
                             0.16, 0.15, 0.14, 0.10, 0.10, 0.10};
         s.max_dt = 1.0 / 12.0;
+        // QM_BENCH_GRID: a market grid from a file (qm_mlmc_conditional_bench's
+        // format: dividend, nK nT, strikes scaled to a spot of 100, maturities,
+        // sigma_loc strike-major). QM_BENCH_SCHEME=before: Milstein on every
+        // step that reaches no date (#371).
+        if (const char *path = std::getenv("QM_BENCH_GRID"))
+        {
+            std::ifstream in(path);
+            std::size_t nK = 0, nT = 0;
+            in >> s.dividend >> nK >> nT;
+            s.rate = 0.04;
+            s.K_grid.resize(nK), s.T_grid.resize(nT), s.sigma_loc_flat.resize(nK * nT);
+            for (double &k : s.K_grid)
+                in >> k;
+            for (double &t : s.T_grid)
+                in >> t;
+            for (double &v : s.sigma_loc_flat)
+                in >> v;
+            if (!in)
+                throw std::runtime_error(std::string("QM_BENCH_GRID: cannot read ") + path);
+        }
+        if (const char *scheme = std::getenv("QM_BENCH_SCHEME"))
+            s.milstein_before_dates = std::string(scheme) == "before";
         return s;
     }
 
@@ -78,11 +102,23 @@ int main(int argc, char **argv)
         {"vanilla call K=100, lastStepCall", "2027-01-01\n    pays lastStepCall(100)\n"},
         {"up-and-out call K=100 B=130, survivalBelow",
          "2027-01-01\n    s = survivalBelow(130)\n    pays s * max(spot() - 100, 0)\n"},
+        // #369 L4: daily closes, hard and with the step into each close
+        // conditioned on survival (level 0 then takes daily steps)
+        {"up-and-out call K=100 B=130, daily closes, hard",
+         "2026-01-01\n    alive = 1\nschedule(2026-01-02, 2026-12-31, 1D, US, F)\n"
+         "    if spot() >= 130 then alive = 0 endIf\n2027-01-01\n"
+         "    if spot() >= 130 then alive = 0 endIf\n    if alive = 1 then pays max(spot() - 100, 0) endIf\n"},
+        {"up-and-out call K=100 B=130, daily closes, knockOutAbove",
+         "2026-01-01\n    k = 100\nschedule(2026-01-02, 2026-12-31, 1D, US, F)\n    knockOutAbove(130)\n"
+         "2027-01-01\n    knockOutAbove(130)\n    pays max(spot() - k, 0)\n"},
     };
+    const char *only = std::getenv("QM_BENCH_ONLY"); // a substring of the cases' names
     std::printf("Local vol (skewed 5x3), multilevel QMC, 32 replicates x %lld points a level, levels 0..%d\n",
                 points, finest);
     for (const auto &[name, script] : cases)
     {
+        if (only && std::string(name).find(only) == std::string::npos)
+            continue;
         const qm::ScriptedProduct<qm::Real> product(script, ctx);
         auto model = qm::scripting::make_script_model<qm::Real>(skewed_local_vol());
         qm::MlqmcSettings s;
@@ -101,16 +137,20 @@ int main(int argc, char **argv)
         for (std::size_t k = 0; k < runs.size(); ++k)
         {
             std::vector<double> v, m;
-            double cost = 0.0, value = 0.0;
+            double cost = 0.0, value = 0.0, units = 0.0;
             for (const qm::QmcLevelStats &lv : runs[k])
             {
                 v.push_back(lv.estimator_variance * static_cast<double>(lv.points));
                 m.push_back(std::fabs(lv.mean));
                 cost += std::sqrt(v.back() * lv.cost);
                 value += lv.mean;
+                units += 32.0 * static_cast<double>(lv.points) * lv.cost;
             }
-            std::printf("  %-30s value %.5f   beta %.2f   optimal cost %.4g   (%.1f s)\n", labels[k], value, -slope(v),
-                        cost * cost, secs[k]);
+            // the optimal cost in seconds: what this run's device took per
+            // model step, times the steps the optimal allocation needs at
+            // unit variance (compare it between estimators of one product)
+            std::printf("  %-30s value %.5f   beta %.2f   optimal cost %.4g   (%.1f s; %.4g s at unit variance)\n",
+                        labels[k], value, -slope(v), cost * cost, secs[k], cost * cost * secs[k] / units);
             std::printf("    V_l:   ");
             for (const double x : v)
                 std::printf(" %10.3e", x);

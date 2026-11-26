@@ -388,6 +388,7 @@ if(QM_BUILD_TESTS)
     tests/testLastStep.cpp
     tests/testESSVI.cpp
     tests/testESSVISuperbucket.cpp
+    tests/testKnockOut.cpp
     tests/testAnalyticControls.cpp
     tests/testScriptParser.cpp
     tests/testScriptEval.cpp

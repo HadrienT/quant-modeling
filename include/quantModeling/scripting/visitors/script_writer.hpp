@@ -51,6 +51,22 @@ namespace quantModeling::scripting
             {
                 const auto *var =
                     dynamic_cast<const NodeVar *>(a->arguments[0].get());
+                // knockOutAbove(L) as the parser wrote it (#369):
+                // `#knockout = #knockout * <weight>`, its level an expression.
+                if (var->name == NodeStepQuantity::kKnockOutVariable)
+                {
+                    const auto *w = a->arguments[1]->arguments.size() == 2
+                                        ? dynamic_cast<const NodeStepQuantity *>(a->arguments[1]->arguments[1].get())
+                                        : nullptr;
+                    if (w != nullptr)
+                    {
+                        NodeConst level;
+                        level.value = w->level;
+                        out += pad(depth) + w->function() + "(" +
+                               (w->arguments.empty() ? expr(level) : expr(*w->arguments[0])) + ")\n";
+                    }
+                    return; // the weight's start at 1, written by no one
+                }
                 out += pad(depth) + var->name + " = " +
                        expr(*a->arguments[1]) + '\n';
                 return;

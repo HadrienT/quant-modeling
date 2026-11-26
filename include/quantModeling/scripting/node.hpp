@@ -197,7 +197,16 @@ namespace quantModeling::scripting
         /// strike keeps the model's own expectation, in `slot` alone.
         std::size_t var_slot = unindexed;
 
-        bool computed_strike() const { return !arguments.empty(); }
+        /// knockOutAbove(L) / knockOutBelow(L) (issue #369) parse to
+        /// `#knockout = #knockout * <this node>`, kind KnockOut, `above` the
+        /// side that knocks out. The weight variable starts at 1 and
+        /// multiplies every payment from the first knock-out's date on
+        /// (scripting/visitors/knock_outs.hpp). The level is an expression in
+        /// `arguments[0]` until ScriptedProduct resolves it to a number --
+        /// it must be known today -- and moves it to `level`.
+        static constexpr const char *kKnockOutVariable = "#knockout";
+
+        bool computed_strike() const { return !arguments.empty() && kind != StepQuantity::KnockOut; }
 
         /// The function's name in the language.
         const char *function() const
@@ -210,6 +219,8 @@ namespace quantModeling::scripting
                     return "lastStepPut";
                 case StepQuantity::LastStepDigital:
                     return "lastStepDigital";
+                case StepQuantity::KnockOut:
+                    return above ? "knockOutAbove" : "knockOutBelow";
                 default:
                     return above ? "survivalAbove" : "survivalBelow";
             }

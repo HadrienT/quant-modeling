@@ -238,7 +238,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              bool second_order, bool terms_as_parameters,
                              const std::vector<double> &curve_factor_basis,
                              const std::vector<std::string> &curve_factor_labels,
-                             bool past_rights_unexercised, const std::string &variance_scheme)
+                             bool past_rights_unexercised, const std::string &variance_scheme,
+                             bool knock_outs_as_thresholds)
 {
     using namespace quantModeling;
 
@@ -261,6 +262,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
     ScriptSettings script_settings{fuzzy, default_eps};
     script_settings.terms_as_parameters = terms_as_parameters;
     script_settings.past_rights_unexercised = past_rights_unexercised;
+    script_settings.knock_outs_as_thresholds = knock_outs_as_thresholds;
     // The flows a seasoned product already paid (its historical events'
     // `pays`, undiscounted): not in today's price, but a holder received them.
     const double historical_payments =
@@ -734,6 +736,8 @@ static py::dict validate_script(const std::string &script,
     analysis["spot_threshold_test"] = a.spot_threshold_test;
     analysis["spot_comparison"] = a.spot_comparison;
     analysis["last_step_digital"] = a.last_step_digital;
+    analysis["knock_out"] = a.knock_out;
+    analysis["knock_outs_on_thresholds"] = a.knock_outs_on_thresholds;
     analysis["path_dependent"] = a.path_dependent;
 
     py::dict out;
@@ -794,6 +798,7 @@ void register_scripting(py::module_ &m)
           py::arg("curve_factor_basis") = std::vector<double>{},
           py::arg("curve_factor_labels") = std::vector<std::string>{},
           py::arg("past_rights_unexercised") = false, py::arg("variance_scheme") = "euler",
+          py::arg("knock_outs_as_thresholds") = false,
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. terms_as_parameters: the script's numbers "
           "are a product's terms (a library product), read as data by the GPU's "

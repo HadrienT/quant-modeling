@@ -58,6 +58,7 @@ namespace quantModeling::scripting
         ExprTree parse_statement();
         ExprTree parse_assignment();
         ExprTree parse_pays();
+        ExprTree parse_knock_out();
         ExprTree parse_if();
 
         ExprTree parse_condition();

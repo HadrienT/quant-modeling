@@ -8,21 +8,30 @@
 # param: low = 0.8 | percent | Lower knock-out barrier, % of the initial level
 # param: high = 1.3 | percent | Upper knock-out barrier, % of the initial level
 # eps: 3
-# greeks: separate
+# greeks: knock-out
 #
 # Both barriers checked at every close (a daily grid approximates continuous
 # monitoring). No rebate.
+#
+# Each close is a knock-out the model conditions on (knockOutAbove /
+# knockOutBelow, #369): the step into the close is drawn on the safe side
+# and the path carries its survival probability -- the same price as an
+# "alive" flag, a smaller error, and greeks with no smoothing. Where the
+# model cannot condition, or its conditioned greeks fail (Heston and SLV
+# below Feller), the thresholds the knock-outs stand for, smoothed at eps
+# for the greeks (greeks: knock-out).
 
 2027-01-04
     strike = 1.0
     low = 0.8
     high = 1.3
     s0 = spot()
-    alive = 1
 
 schedule(2027-01-05, 2027-12-30, 1D, US, F)
-    if spot() <= low * s0 or spot() >= high * s0 then alive = 0 endIf
+    knockOutBelow(low * s0)
+    knockOutAbove(high * s0)
 
 2028-01-04
-    if spot() <= low * s0 or spot() >= high * s0 then alive = 0 endIf
-    if alive = 1 then pays max(spot() - strike * s0, 0) endIf
+    knockOutBelow(low * s0)
+    knockOutAbove(high * s0)
+    pays max(spot() - strike * s0, 0)

@@ -141,6 +141,7 @@ namespace quantModeling
                   const std::vector<SampleDef> &defline) override
         {
             refuse_bridge_survivals(defline, "RoughBergomiSimModel"); // lastStep*: write_sample
+            refuse_knock_outs(defline, "RoughBergomiSimModel");
             timeline_ = canonical_timeline(product_timeline);
             if (timeline_.empty())
                 throw InvalidInput("RoughBergomiSimModel: the product has no event date");

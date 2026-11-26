@@ -72,11 +72,18 @@ namespace quantModeling::scripting::ir
         /// the date the path is heading for, multiplied by every step's
         /// bridge factor and set back to 1 once the date has read them.
         int n_surv = 0;
+        /// The script has knock-outs (knockOutAbove / Below, #369): the step
+        /// into a knock-out date draws conditioned on survival -- the step
+        /// row's flag and corridor say which steps and where -- and leaves
+        /// the survival probability in the state slot ko(), 1 after any
+        /// other step. One underlying.
+        bool knock_out = false;
         int var0() const { return n_model; }
         int pay() const { return n_model + n_vars; }
         int last0() const { return n_model + n_vars + 1; } ///< F of asset a at last0() + 2a, v at + 1
         int surv0() const { return last0() + (last_step ? 2 * n_assets : 0); }
-        int n_state() const { return surv0() + n_surv; }
+        int ko() const { return surv0() + n_surv; }
+        int n_state() const { return ko() + (knock_out ? 1 : 0); }
 
         // theta: the differentiable parameters first, in the CPU model's
         // label order (mc::dual_directions), then what is not differentiated
@@ -93,6 +100,10 @@ namespace quantModeling::scripting::ir
         /// The step row's first survival column: level and "above" (1/0)
         /// of each survival slot of the date the step leads to.
         int surv_col0 = 0;
+        /// With knock_out: the step row's columns flag (1 when the step
+        /// reaches a knock-out date), has_lo, ln lo, has_hi, ln hi -- the
+        /// corridor of that date, finite even where absent.
+        int ko_col0 = -1;
         /// Multilevel's coarse path conditioned on the fine one (Giles &
         /// Szpruch 2012; WP 26 §26.2): the step also reads `draw(factors)`,
         /// the part a of its draw the fine path's first sub-step carries,
@@ -104,6 +115,13 @@ namespace quantModeling::scripting::ir
         /// z2 and a = sqrt(w) z1 from two fine draws.
         bool half = false;
         int half_col = -1;
+        /// Local vol, Milstein before the dates (#371): the step row's column
+        /// `mil_col` is 1 on a step that reaches no product date, which then
+        /// adds Milstein's term 1/2 sigma (S dsigma/dS) dt (z^2 - 1), as
+        /// mc::local_vol_milstein_step; the steps into a date stay log-Euler.
+        /// Price programs only.
+        bool milstein = false;
+        int mil_col = -1;
         int event_cols = 1; ///< per date: 1 + the most df() slots a date reads, + the most fwd() slots
         /// The date row's first fwd() column: tau = T - t (risk), or
         /// e^((r - q) tau) (price), q spot(0)'s dividend yield.
@@ -116,7 +134,7 @@ namespace quantModeling::scripting::ir
     /// even when the script reads no last-step expectation (Vibrato needs
     /// them, WP 27 §14.11).
     PathLayout path_layout(DeviceModel::Kind kind, int n_assets, const Script &script, bool risk,
-                           bool last_step = false, bool half = false);
+                           bool last_step = false, bool half = false, bool milstein = false);
 
     /// The whole program.
     struct PathProgram
@@ -138,7 +156,7 @@ namespace quantModeling::scripting::ir
     /// `half`: a multilevel coarse path conditioned on the fine one
     /// (PathLayout::half); local vol only, refused otherwise.
     PathProgram path_program(const Script &script, DeviceModel::Kind kind, int n_assets, bool risk,
-                             bool last_step = false, bool qe = false, bool half = false);
+                             bool last_step = false, bool qe = false, bool half = false, bool milstein = false);
 
     /// A script-level block bound to the path's state and data (VarIn, PayIn
     /// and Spot become State; Num and Df the date's data, or exp of the rate

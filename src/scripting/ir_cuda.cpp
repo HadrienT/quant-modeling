@@ -235,6 +235,9 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
                     case Op::Ncdf: // the host's formula (ir.hpp), not CUDA's normcdf
                         o << x(k) << " = 0.5 * erfc(-" << a << " * 0.70710678118654752440);";
                         break;
+                    case Op::InvNcdf: // as the device's draws: libdevice's inverse (utils/inverse_normal.hpp)
+                        o << x(k) << " = normcdfinv(" << a << ");";
+                        break;
                     case Op::Smooth:
                         o << "if (" << c << " <= 0.0) " << x(k) << " = " << a << " > 0.0 ? 1.0 : 0.0; else " << x(k)
                           << " = qm_clamp01((" << a << " + " << c << ") / (" << c << " + " << c << "));";
@@ -400,7 +403,7 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
     } // namespace
 
     CudaSource cuda_path_source(const ir::Script &script, int model_kind, int n_assets, PathKernel kernel, bool qe,
-                                bool half)
+                                bool half, bool milstein)
     {
         CudaSource out;
         if (script.empty())
@@ -424,9 +427,14 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
             out.why = "the coarse path's conditioning on the fine one runs under local vol, without Vibrato";
             return out;
         }
+        if (milstein && (kind != DeviceModel::Kind::LocalVol || kernel != PathKernel::Price))
+        {
+            out.why = "Milstein before the dates prices on the GPU under local vol; its risks run on the CPU's tape";
+            return out;
+        }
         const ir::PathProgram primal =
             ir::path_program(script, kind, n_assets, kernel != PathKernel::Price, kernel == PathKernel::Vibrato,
-                             kernel == PathKernel::Price && qe, half);
+                             kernel == PathKernel::Price && qe, half, milstein);
         const ir::PathLayout &l = primal.layout;
         std::ostringstream src;
         src << kPrelude;

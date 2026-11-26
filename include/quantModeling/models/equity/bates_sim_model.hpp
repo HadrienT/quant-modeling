@@ -4,6 +4,7 @@
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/equity/knock_out.hpp"
 #include "quantModeling/models/equity/last_step.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
 #include "quantModeling/models/device_model.hpp"
@@ -99,7 +100,7 @@ namespace quantModeling
 
         /// See models/equity/bs_sim_model.hpp for why this exists.
         BatesSimModel(const BatesSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), lambda_(other.lambda_), jump_mean_(other.jump_mean_), jump_vol_(other.jump_vol_), max_dt_(other.max_dt_), refinement_(other.refinement_), scheme_(other.scheme_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_), has_last_step_(other.has_last_step_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), lambda_(other.lambda_), jump_mean_(other.jump_mean_), jump_vol_(other.jump_vol_), max_dt_(other.max_dt_), refinement_(other.refinement_), scheme_(other.scheme_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_), has_last_step_(other.has_last_step_), has_knock_out_(other.has_knock_out_)
         {
             set_param_pointers();
         }
@@ -111,6 +112,11 @@ namespace quantModeling
         {
             refuse_bridge_survivals(defline, "BatesSimModel");
             has_last_step_ = mc::asks_last_step(defline);
+            // Knock-outs (#369): the spot's step conditioned on survival,
+            // lognormal given the variance -- Heston's, not with jumps.
+            has_knock_out_ = mc::check_knock_outs(defline, "BatesSimModel");
+            if (has_knock_out_ && !(to_double(lambda_) == 0.0))
+                refuse_knock_outs(defline, "BatesSimModel with jumps");
             if (has_last_step_ && !(to_double(lambda_) == 0.0))
                 throw InvalidInput("BatesSimModel: lastStepCall() / lastStepPut() / lastStepDigital() need a lognormal "
                                    "last step, and jumps make it a mixture (Heston, lambda = 0, has one)");
@@ -182,9 +188,42 @@ namespace quantModeling
                 const T sqrt_v_plus = sqrt(v_plus);
 
                 const int n_jumps = sample_poisson(u_poisson, to_double(lambda_) * dt);
+                const std::ptrdiff_t reached = event_index_of_step_[i];
+                const mc::KnockOutCorridor ko = has_knock_out_ && reached >= 0
+                                                    ? mc::knock_out_corridor(defline_[static_cast<std::size_t>(reached)])
+                                                    : mc::KnockOutCorridor{};
                 bool stepped = false;
+                if (ko.active()) // a knock-out at the date (#369); lambda = 0 (init)
+                {
+                    using std::log;
+                    const mc::HestonParamsT<T> hp{v0_, kappa_, theta_, xi_, rho_};
+                    T survival(1.0);
+                    if constexpr (std::is_same_v<T, Real>)
+                        if (scheme_ == mc::VarianceScheme::QE) // the variance first, then the spot's law given it
+                        {
+                            double mean, sd;
+                            mc::qe_variance_step(hp, 1.0, r_, q_, v, dt, z_spot, mean, sd);
+                            double z = z_vol_indep;
+                            survival = mc::condition_on_survival(ko, log(S), mean, sd, z);
+                            S = S * exp(mean + sd * z);
+                            stepped = true;
+                        }
+                    if (!stepped) // Euler: z_spot drives the spot, then the variance through rho
+                    {
+                        const T mean = (r_ - q_ - 0.5 * v_plus) * dt;
+                        const T sd = sqrt_v_plus * sqdt;
+                        T z(z_spot);
+                        survival = mc::condition_on_survival(ko, T(log(S)), mean, sd, z);
+                        // heston_log_return's grouping, as the IR's step
+                        S = S * exp(mc::heston_log_return(r_, q_, lambda_, k, v_plus, sqrt_v_plus, sqdt, dt, z));
+                        mc::heston_variance_step(hp, v, v_plus, sqrt_v_plus, sqdt, dt, z, z_vol_indep);
+                        stepped = true;
+                    }
+                    mc::write_knock_out(defline_[static_cast<std::size_t>(reached)],
+                                        path[static_cast<std::size_t>(reached)], ko, survival);
+                }
                 if constexpr (std::is_same_v<T, Real>)
-                    if (scheme_ == mc::VarianceScheme::QE)
+                    if (!stepped && scheme_ == mc::VarianceScheme::QE)
                     {
                         // QE for the diffusion (z_spot drives the variance,
                         // z_vol_indep the spot's independent part), the jump
@@ -337,6 +376,7 @@ namespace quantModeling
         std::vector<std::ptrdiff_t> event_index_of_step_;
         std::size_t sim_dim_ = 0;
         bool has_last_step_ = false; ///< the defline asks for a lastStep*() expectation
+        bool has_knock_out_ = false; ///< the defline has a knock-out (#369)
         std::vector<T *> params_;
     };
 

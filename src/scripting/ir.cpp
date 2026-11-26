@@ -310,7 +310,7 @@ namespace quantModeling::scripting::ir
                 values_.clear();
                 degrees_.clear();
                 has_monitor_ = false;
-                has_bridge_ = has_last_step_ = false;
+                has_bridge_ = has_last_step_ = has_knock_out_ = false;
                 quantities_.clear();
                 fwd_mats_.clear();
                 term_values_.clear();
@@ -331,6 +331,7 @@ namespace quantModeling::scripting::ir
             bool has_monitor() const { return has_monitor_; }
             bool has_bridge() const { return has_bridge_; }
             bool has_last_step() const { return has_last_step_; }
+            bool has_knock_out() const { return has_knock_out_; }
             /// The maturities of the event just lowered's fwd() slots.
             const std::vector<Time> &fwd_mats() const { return fwd_mats_; }
             /// The numbers of the event just lowered, in the order its
@@ -428,6 +429,18 @@ namespace quantModeling::scripting::ir
                         default:
                             push(N(d2));
                     }
+                    return;
+                }
+                // A knock-out (#369): the path's step into the date draws
+                // conditioned on survival and leaves its probability in the
+                // state, which the date reads (ir_path.cpp).
+                if (n.kind == StepQuantity::KnockOut)
+                {
+                    has_knock_out_ = true;
+                    if (quantities_.size() <= n.slot)
+                        quantities_.resize(n.slot + 1);
+                    quantities_[n.slot] = StepMonitor{n.level, n.asset, n.above, n.kind};
+                    push(b_.value(Op::Surv, i));
                     return;
                 }
                 const bool bridge = n.kind == StepQuantity::Survival;
@@ -760,7 +773,7 @@ namespace quantModeling::scripting::ir
             std::int32_t pay_ = -1, first_pay_ = -1;
             std::vector<std::int32_t> values_, degrees_;
             bool has_monitor_ = false;
-            bool has_bridge_ = false, has_last_step_ = false;
+            bool has_bridge_ = false, has_last_step_ = false, has_knock_out_ = false;
             std::vector<StepMonitor> quantities_;
             std::vector<Time> fwd_mats_;
         };
@@ -782,6 +795,7 @@ namespace quantModeling::scripting::ir
             s.has_monitor = s.has_monitor || lowering.has_monitor();
             s.has_bridge = s.has_bridge || lowering.has_bridge();
             s.has_last_step = s.has_last_step || lowering.has_last_step();
+            s.has_knock_out = s.has_knock_out || lowering.has_knock_out();
             s.event_fwd_mats.push_back(lowering.fwd_mats());
             s.has_forward = s.has_forward || !lowering.fwd_mats().empty();
             auto it = std::find(s.blocks.begin(), s.blocks.end(), b);
@@ -875,6 +889,8 @@ namespace quantModeling::scripting::ir
                     return "abs";
                 case Op::Ncdf:
                     return "ncdf";
+                case Op::InvNcdf:
+                    return "invncdf";
                 case Op::Smooth:
                     return "smooth";
                 case Op::Eq:

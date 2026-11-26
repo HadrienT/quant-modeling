@@ -317,9 +317,10 @@ namespace quantModeling::mc
     /// Euler step of the log-spot under local vol: S *= exp((r - q - σ²/2)dt + σ√dt z).
     /// Returns the step's variance of the log-spot, σ² dt, for the barrier
     /// monitoring of bridge_survival() (unused, it costs nothing).
-    template <class T>
+    /// `z` may be a T: a knock-out's conditioned draw (#369).
+    template <class T, class Z = double>
     QM_HOST_DEVICE T local_vol_step(const GridView<T> &sigma_loc, const T &r, const T &q, T &S, double t,
-                                    double dt, double z)
+                                    double dt, const Z &z)
     {
         using std::exp;
         using std::sqrt;
@@ -417,9 +418,11 @@ namespace quantModeling::mc
 
     /// Full-truncation Euler step of the variance, from the pre-step
     /// v_plus = max(v, floor) and √v_plus.
-    template <class T>
+    /// `z_spot` may be a T: the spot's draw conditioned on a knock-out (#369),
+    /// which depends on the parameters.
+    template <class T, class Z = double>
     QM_HOST_DEVICE void heston_variance_step(const HestonParamsT<T> &h, T &v, const T &v_plus, const T &sqrt_v_plus,
-                                             double sqdt, double dt, double z_spot, double z_indep)
+                                             double sqdt, double dt, const Z &z_spot, double z_indep)
     {
         using std::sqrt;
         const T dW_vol = h.rho * z_spot + sqrt(1.0 - h.rho * h.rho) * z_indep;
@@ -429,9 +432,9 @@ namespace quantModeling::mc
     /// Heston log-return over one step, before jumps, with Bates's jump
     /// compensator λk (λ = 0 for Heston). λ and k come in separately so that
     /// the expression is recorded on an AAD tape in Bates's own order.
-    template <class T>
+    template <class T, class Z = double>
     QM_HOST_DEVICE T heston_log_return(const T &r, const T &q, const T &lambda, const T &k, const T &v_plus,
-                                       const T &sqrt_v_plus, double sqdt, double dt, double z_spot)
+                                       const T &sqrt_v_plus, double sqdt, double dt, const Z &z_spot)
     {
         return (r - q - lambda * k - 0.5 * v_plus) * dt + sqrt_v_plus * (sqdt * z_spot);
     }
@@ -484,8 +487,12 @@ namespace quantModeling::mc
      * exponential one, its tail 1 - U = Φ(-z_v) computed directly), z_s the
      * spot's part independent of V. Plain doubles only: price runs.
      */
-    QM_HOST_DEVICE inline void qe_step(const HestonParamsT<double> &h, double L, double r, double q, double &S,
-                                       double &v, double dt, double z_v, double z_s)
+    /// qe_step's variance, and the spot's law given it: moves v to V' and
+    /// returns the log-spot's mean (r - q)dt + K0* + K1 V + K2 V' and its
+    /// standard deviation sqrt(K3 V + K4 V'), so that ln S' = ln S + mean +
+    /// sd z_s. A knock-out (#369) conditions z_s on them.
+    QM_HOST_DEVICE inline void qe_variance_step(const HestonParamsT<double> &h, double L, double r, double q,
+                                                double &v, double dt, double z_v, double &mean, double &sd)
     {
         using std::erfc;
         using std::exp;
@@ -537,8 +544,18 @@ namespace quantModeling::mc
         }
         const double K0s = corrected ? -log_mgf - (K1 + 0.5 * K3) * v : K0;
         const double var = K3 * v + K4 * v_next;
-        S = S * exp((r - q) * dt + K0s + K1 * v + K2 * v_next + sqrt(var < 0.0 ? 0.0 : var) * z_s);
+        mean = (r - q) * dt + K0s + K1 * v + K2 * v_next;
+        sd = sqrt(var < 0.0 ? 0.0 : var);
         v = v_next;
+    }
+
+    /// See qe_variance_step: one QE step of the spot and its variance.
+    QM_HOST_DEVICE inline void qe_step(const HestonParamsT<double> &h, double L, double r, double q, double &S,
+                                       double &v, double dt, double z_v, double z_s)
+    {
+        double mean, sd;
+        qe_variance_step(h, L, r, q, v, dt, z_v, mean, sd);
+        S = S * std::exp(mean + sd * z_s);
     }
 
     /// One SLV step by QE (price runs, #317): qe_step with the leverage read
@@ -553,9 +570,9 @@ namespace quantModeling::mc
     }
 
     /// One SLV step: Heston with the spot's vol scaled by the leverage L(S, t).
-    template <class T>
+    template <class T, class Z = double>
     QM_HOST_DEVICE void slv_step(const GridView<T> &leverage, const HestonParamsT<T> &h, const T &r, const T &q,
-                                 T &S, T &v, double t, double dt, double z_spot, double z_indep)
+                                 T &S, T &v, double t, double dt, const Z &z_spot, double z_indep)
     {
         using std::exp;
         using std::max;

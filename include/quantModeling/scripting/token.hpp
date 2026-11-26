@@ -51,6 +51,8 @@ namespace quantModeling::scripting
         LastStepCall,    ///< lastStepCall(K[, i]) -- E[max(S - K, 0)] over the model's last step (WP 27 §8 rung 1)
         LastStepPut,     ///< lastStepPut(K[, i]) -- E[max(K - S, 0)] over the model's last step (WP 27 §8 rung 1)
         LastStepDigital, ///< lastStepDigital(K[, i]) -- P(S > K) over the model's last step (WP 27 §8 rung 1)
+        KnockOutAbove,   ///< knockOutAbove(L) -- a statement: the path dies if the spot reaches L at this date (#369)
+        KnockOutBelow,   ///< knockOutBelow(L) -- a statement: the path dies if the spot falls to L at this date (#369)
         ControlPays,     ///< controlPays expr -- a cash flow of the script's analytic control (WP 26 P2)
         Schedule,        ///< schedule(start, end, tenor, calendar, convention) -- WP 16e
         Exercise,        ///< exercise(regressors...) -- the holder's early exercise (LSMC)
