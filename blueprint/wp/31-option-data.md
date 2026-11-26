@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | *In progress*: design written and decisions D1, D2, D3, D5 taken on 2026-11-26 (§10); no lot started. Issue #386 |
+| **Status** | *In progress*: decisions D1, D2, D3, D5 taken on 2026-11-26 (§10). The `data-ingest` lots L1–L4 and L8 are done (data-ingest #32, #33, issue data-ingest #31); what they measured, and where they depart from this design, is in §4.7. L0, L5–L7 to do. Issue #386 |
 | **Depends on** | WP 08 (stored option chains, `RawVolSurface` cleaning), WP 30 (the eSSVI surface that consumes the quotes) |
 | **Unlocks** | WP 30 E2 (the API on eSSVI, #381): its measured price moves mean nothing until the quotes are right |
 | **Repositories** | `~/data-ingest` (ingestion, the new derived table) and this one (the consumer, the reduced cleaning) |
@@ -28,6 +28,8 @@ A wrong forward pushes a call's IV up and a put's down. The cleaning keeps both 
 
 At one year, the market's ATM vol from the mids at our forward is about 21.5–22 %. The SVI surface reads 19.3 %, the eSSVI surface 17.1 %. The error grows with T (r − q).
 
+> **Corrected by L2–L3 (§4.7).** The 21.5–22 % is read from SPY's *American* mids at an assumed forward. The European-equivalent ATM vol at one year, computed in `options.chain_iv`, is **19.6 % on SPX** and **20.0–20.2 % on SPY de-Americanized**. The SVI surface's 19.3 % is therefore close to the market; the eSSVI's 17.1 % is still 2.5 points low. The "market" column of §1.2 is to be recomputed on `chain_iv` in L7.
+
 ### 1.2 What the model-free references say
 
 The references, taken on SPY 2026-11-25 at T = 1, r = 4 % (the Pricing page's default; SOFR 3.94 %):
@@ -36,7 +38,7 @@ The references, taken on SPY 2026-11-25 at T = 1, r = 4 % (the Pricing page's de
 
 | | Market | SVI surface | eSSVI surface |
 |---|---|---|---|
-| ATM vol | ~21.5–22 % | 19.3 % | 17.1 % |
+| ATM vol | ~21.5–22 % on American mids; **19.6 % (SPX) / 20.0–20.2 % (SPY de-Americanized)** in `chain_iv`, §4.7 | 19.3 % | 17.1 % |
 | Fair variance (vol) | 0.0689 (26.2 %) full strip; 0.0634 (25.2 %) from 30 % strikes; 0.0567 (23.8 %) from 50 % | 0.051 within the Dupire band k ∈ [−0.6, 0.6], exploding beyond | 0.0455 (21.3 %) |
 | P(S_T < S0) | 0.350 | 0.364 | 0.316 |
 
@@ -49,7 +51,7 @@ The −15 % to −52 % moves between the surfaces compare two wrong numbers. The
 ### 1.3 Other facts found on the way
 
 - **SPY's options are American.** Regressing parity in K gave a discount factor of about 1 on every expiry, because of the ITM puts' early-exercise premium. Taking the rate from the curve and the forward from parity near the money gives a carry of 3.1–3.4 %/yr, so q is about 0.6–0.9 %, against 0.79 % stored.
-- **SPY's end-of-quarter expiries** (2027-03-31, 06-30, 09-30) have inconsistent quotes. Their parity forward spreads by 3.5–5 $ across strikes, against 0.4 $ on the monthlies. Their strikes stop at 0.72 S.
+- **SPY's end-of-quarter expiries** (2027-03-31, 06-30, 09-30) have inconsistent quotes. Their parity forward spreads by 3.5–5 $ across strikes, against 0.4 $ on the monthlies. Their strikes stop at 0.72 S. *(L3, §4.7: the spread is a non-robust one, driven by a share of aberrant quotes, mostly ITM calls; robustly, and on de-Americanized prices near the money, these expiries are as consistent as the monthlies, and they are kept.)*
 - **The E2 measurement priced at r = 3 %**, the Pricing page at 4 %.
 - **yfinance offers European options on the S&P 500.** `^SPX` (SPX and SPXW, 51 expiries to 2031-12) and `^XSP` (mini-SPX, a tenth of SPX, 41 expiries to 2028-12, ATM spreads of 0.07 $). yfinance returns only part of SPX's strikes (56 calls on a one-month expiry), and their open interest comes back as 0 outside the session.
 
@@ -123,11 +125,11 @@ A load registry, `options.chain_iv_loads`, mirrors `chain_snapshot_loads`: it ho
   - The residuals' dispersion is the expiry's quality.
   - Check parity within the bid/ask bounds, `bid_C − ask_P ≤ DF (F − K) ≤ ask_C − bid_P` (Madan et al. 2019).
 - **American (SPY, stocks).**
-  - DF from the same day's SPX/XSP parity, interpolated in T to the expiry, with the SOFR curve as fallback (decision D3).
-  - F from carry: an index ETF takes a continuous yield, `prices.dividend_yields`. A stock takes its discrete dividends: the next ones projected from `equity-dividends` (last amount, same frequency), so that the tree exercises at the right dates.
+  - DF from the same day's SPX/XSP parity, interpolated in T to the expiry, with the SOFR curve as fallback (decision D3). *As built: the fallback is FRED's SOFR then Treasury CMT yields (§4.7).*
+  - F from carry: an index ETF takes a continuous yield, `prices.dividend_yields`. A stock takes its discrete dividends: the next ones projected from `equity-dividends` (last amount, same frequency), so that the tree exercises at the right dates. *As built: every ticker with a dividend history takes discrete dividends, the ETFs included; the continuous yield is only the fallback (§4.7).*
   - Parity becomes a bound on American options, `S − K ≤ C − P ≤ S − K·DF` without dividends. The pairs nearest the money must fall within it, widened by the dividends; an expiry that misses is flagged.
   - The parity forward near the money is kept as a diagnostic, and its gap from the carry forward measures the spot asynchrony (§3).
-- **Expiry rejection**: a parity dispersion beyond a threshold (SPY's end-of-quarter expiries: 3.5–5 $ against 0.4 $), or too few two-sided strikes.
+- **Expiry rejection**: a parity dispersion beyond a threshold, or too few two-sided strikes. *(The end-of-quarter example does not hold once the dispersion is robust: §4.7.)*
 
 ### 4.4 The implied vol
 
@@ -160,6 +162,49 @@ A load registry, `options.chain_iv_loads`, mirrors `chain_snapshot_loads`: it ho
   - the 1y ATM is within 21–23 %;
   - the end-of-quarter expiries are rejected;
   - the monthlies are kept.
+
+  *As built (§4.7): the median call/put gap within |ln K/F| < 0.02 under 0.5 vol point; the 1y ATM within 19–21.5 %; every expiry beyond 18 days kept, the end-of-quarter ones included; the carry forward within 40 bp a year of the de-Americanized parity forward.*
+
+### 4.7 As built in `data-ingest`, and what it measured (L1–L4, 2026-11-26)
+
+The implementation is `options-chain-iv` (`src/data_ingest/sources/options_chain_iv.py`, analytics in `src/data_ingest/options/`), documented in `data-ingest`'s `docs/sources.md`. It follows §4 except where the data said otherwise:
+
+1. **Universe and coverage (L1).**
+   - `^SPX` and `^XSP` are captured; every quote keeps `contract_symbol`, `last_trade_date` and its `root`, which joins the chain's primary key.
+   - yfinance's coverage, on the 2026-11-25 closes (`docs/option-coverage.md`):
+     - SPX: 22,268 quotes, 21,047 of them two-sided, to 2031-12; the monthlies every 5 points, from K/S 0.03 to about 1.6–1.9;
+     - XSP: 9,242 quotes, to 2028-12.
+   - The "56 calls" truncation does not recur on the monthlies.
+   - ATM relative spreads: SPX 0.6–1.1 %, SPXW 0.3–0.7 %, XSP 1.5–3 %.
+   - On a third Friday yfinance returns one contract per strike, SPX at some and SPXW at others, so parity is fitted per root.
+   - An unknown root, `SPXO`, is stored and left out.
+   - The comparison with Cboe's listing is dropped (decided with the maintainer, 2026-11-26).
+2. **One discount curve per day.**
+   - Every European expiry takes DF from a curve built on the free parity fits whose slope is reliable: at least 14 days, a rate standard error under 25 bp, a dispersion under half the parity band.
+   - F alone comes from the expiry's own parity.
+   - Fitted alone, the slope is unusable on short expiries: −70 % of implied rate on a two-day SPXW.
+   - The SPX implied rate runs from 4.4 % (two months) to 5.1 % (one to two years).
+3. **D3's fallback, settled.**
+   - The fallback is FRED: SOFR at the overnight point, then the Treasury CMT yields `DGS1MO`–`DGS30`, read directly without a bootstrap.
+   - It applies to every day stored before SPX was captured, flagged `rate_fallback`. The maintainer accepted this for the history.
+4. **ETFs take discrete dividends.**
+   - yfinance's trailing yield for SPY is 0.79 %, against 1.06 % from the stored payments (7.58 $ over twelve months).
+   - A continuous yield also spreads the December ex-date (1.9 $) over the year.
+   - With D3's DF, discrete dividends projected from `prices.dividends` took the median call/put IV gap near the forward from 0.82 to 0.27 vol point, and under 0.1 point on every expiry to 2027-02.
+5. **De-Americanization as a fixed point.**
+   - σ solves Black(σ) = mid − premium_tree(σ), where the premium is American − European on one 201-step Leisen-Reimer tree.
+   - The tree's European bias cancels in the difference.
+   - σ is recovered to 1e-5 on synthetic tree prices.
+6. **The American diagnostics use de-Americanized prices.**
+   - On the raw American mids, the parity forward K + (C − P)/DF carries the puts' early-exercise premium: −9 $ at one year on SPY.
+   - On de-Americanized prices, the carry forward and the parity forward agree within 40 bp a year of carry.
+7. **No end-of-quarter rejection.**
+   - SPY's end-of-quarter expiries hold aberrant quotes (a call at 131 $ at K = 651 between neighbours at 84 $).
+   - They are mostly ITM, which the OTM selection leaves out. The pairs that break the parity bounds are flagged `parity_outlier`.
+   - Robustly, these expiries are as consistent as the monthlies. A non-robust dispersion would reject monthlies too.
+8. **The ATM vol.** At one year: 19.6 % on SPX, 20.0–20.2 % on SPY de-Americanized; SPX and SPY agree within about half a point, the cross-check of D2. See the note under §1.1.
+9. **Not built.** `deep_itm_dropped`: the ITM side outside the both-sides band is not stored at all, and the raw chain keeps it. Two flags were added: `not_otm`, the side kept for the diagnostic only, and `short_maturity`, under 7 days. `rate_fallback` is also a flag.
+10. **Times.** `ttm` runs from the close of the NYSE session of the quotes to 09:30 New York (SPX root) or 16:00 (every other root). SPX and XSP also trade overnight (Cboe GTH, from 20:15 New York); the 22:30 UTC snapshot falls before it.
 
 ## 5. Design — quant-modeling
 
@@ -247,14 +292,14 @@ On every stored day, and as the acceptance of L2/L3/L5:
 | Lot | Repo | Content | Accepted when |
 |---|---|---|---|
 | L0 | AgenticEnv, this one | Literature review (§7): fetch, ingest, read; §6 and §7 completed | thresholds fixed on sources; this file updated |
-| L1 | `data-ingest` | Universe `^SPX`, `^XSP`; `contract_symbol`, root, `last_trade_date` stored; SPX and XSP strike coverage measured against Cboe's listing (it chooses D2's primary); index level source if missing | a day of SPX/XSP stored; coverage written down |
-| L2 | `data-ingest` | `options-chain-iv`, European branch: parity forward and DF (§4.3), OTM, Black-76 by Jäckel, flags, registry, DAG task | tests of §4.6 (round trip, European); SPX/XSP day computed |
-| L3 | `data-ingest` | American branch: DF from SPX/XSP parity interpolated in T, SOFR fallback (D3); dividends (continuous for ETFs, discrete projected for stocks); tree de-Americanization; parity bounds; expiry rejection | tests of §4.6 (American, SPY 2026-11-25 regression) |
-| L4 | `data-ingest` | Backfill of every stored day; method version | history recomputed; counts per day logged |
+| L1 | `data-ingest` | Universe `^SPX`, `^XSP`; `contract_symbol`, root, `last_trade_date` stored; SPX and XSP strike coverage measured (it chooses D2's primary; the Cboe comparison was dropped); index level from `^GSPC`, already stored | **Done** (data-ingest #32): a day of SPX/XSP stored; coverage in `docs/option-coverage.md` |
+| L2 | `data-ingest` | `options-chain-iv`, European branch: parity forward and DF (§4.3), OTM, Black-76 by Jäckel, flags, registry, DAG task | **Done** (data-ingest #33): tests of §4.6 (round trip, European) passed; SPX/XSP day computed |
+| L3 | `data-ingest` | American branch: DF from SPX/XSP parity interpolated in T, SOFR fallback (D3); dividends (continuous for ETFs, discrete projected for stocks); tree de-Americanization; parity bounds; expiry rejection | **Done** (data-ingest #33): tests of §4.6 as amended in §4.7 |
+| L4 | `data-ingest` | Backfill of every stored day; method version | **Done** (data-ingest #33): `ingest run options-chain-iv --full`; counts per day logged |
 | L5 | this one | `market_snapshot` and `RawVolSurface` on `chain_iv`, stored forwards; S&P 500 products on the XSP/SPX surface, SPY's as a cross-check (D2); filters as §6 decides; the other consumers (§5.6) | the European surface reprices its OTM mids (§8); SPY's cross-check agrees within errors; pytest and C++ tests |
 | L6 | this one | The pricers' forward (D1): market forwards and discounts per maturity, `rate` as an override (API field, Pricing page label); `QM_OPTION_DATA` switch (D5) | a vanilla reprices on the surface's forward under every model; `legacy` gives today's numbers bit for bit |
 | L7 | this one | The #384 measurement rerun (§8) and the maintainer's decision on E2 (#381) | table presented; WP 30 status updated |
-| L8 | both | Documentation: `options_chain.py`'s docstring, `docs/sources.md` (`data-ingest`), this file's status | — |
+| L8 | both | Documentation: `options_chain.py`'s docstring, `docs/sources.md` (`data-ingest`), this file's status | `data-ingest` side and this file done; quant-modeling's own docs with L5 |
 
 Order: L0 first, then L1 → L2 → L3 → L4 → L5 → L6 → L7. L1 and L2 on SPX/XSP do not wait for L3. L5 can start on the European tickers alone.
 
@@ -268,10 +313,12 @@ Order: L0 first, then L1 → L2 → L3 → L4 → L5 → L6 → L7. L1 and L2 on
   - The surface is in ln(K/F), so it transfers to SPY.
   - SPY's own surface, de-Americanized, stays as a cross-check: the same day's two surfaces should agree within their errors, and a gap is a data alarm.
   - XSP or SPX as primary is chosen on L1's coverage measurement: XSP has strikes at SPY's scale, tight spreads and expiries to 2028; SPX has more expiries, to 2031, but yfinance truncates its strikes.
+  - **L1's measurement points to SPX** (§4.7): relative spreads three to five times tighter than XSP's, wings to K/S 0.03 on the monthlies, and no truncation on them. XSP stays as a second European chain on the same underlying, for the discount curve and a cross-check.
   - No de-Americanization sits on the main path of S&P 500 products.
 - **D3 — The discount of American options is SPX's.**
   - The discount factor implied by the same day's SPX/XSP parity, interpolated in T to the expiry: the option market's own financing rate, valid for every USD underlying.
   - Fallback when no European chain is stored that day: the SOFR curve. `data-ingest` builds it from the stored DTCC swaps or reads it from what quant-modeling builds (WP 23's `usd-sofr`); which one is settled in L3.
+  - **Settled in L3 (2026-11-26):** neither. The fallback reads a curve directly from FRED: SOFR at the overnight point, then the Treasury CMT yields (§4.7).
   - A fallback day is flagged in `chain_iv_expiries`.
 - **D4 — Filter thresholds (§6): open**, decided once L0 has read the sources.
 - **D5 — A switch for the data, then E2 separately.**
