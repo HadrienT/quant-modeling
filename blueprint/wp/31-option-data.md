@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | *In progress*: decisions D1, D2, D3, D5 taken on 2026-11-26 (§10). The `data-ingest` lots L1–L4 and L8 are done (data-ingest #32, #33, issue data-ingest #31); what they measured, and where they depart from this design, is in §4.7. L0 done, D4 decided (§6.1, §10). L5–L7 to do. Issue #386 |
+| **Status** | *In progress*: decisions D1, D2, D3, D5 taken on 2026-11-26 (§10). The `data-ingest` lots L1–L4 and L8 are done (data-ingest #32, #33, issue data-ingest #31); what they measured, and where they depart from this design, is in §4.7. L0 done, D4 decided (§6.1, §10). L5 done (§5.8, PR #388); the live Yahoo fallbacks removed. L6–L7 to do. Issue #386 |
 | **Depends on** | WP 08 (stored option chains, `RawVolSurface` cleaning), WP 30 (the eSSVI surface that consumes the quotes) |
 | **Unlocks** | WP 30 E2 (the API on eSSVI, #381): its measured price moves mean nothing until the quotes are right |
 | **Repositories** | `~/data-ingest` (ingestion, the new derived table) and this one (the consumer, the reduced cleaning) |
@@ -215,13 +215,32 @@ The implementation is `options-chain-iv` (`src/data_ingest/sources/options_chain
    - The proposal: `market_snapshot` exposes the term structure of F and DF it read, and the pricers' drift takes the implied carry per maturity.
    - The request's `rate` would then matter for discounting only, or follow DF too.
 4. **The XSP/SPX surface for S&P 500 products (decision D2).** The surface in ln(K/F) transfers between SPX and SPY. The difference between the two (SPY's dividends and fees) sits in their forwards.
-5. **The live Yahoo fallbacks** (`vol_surface.py`, `routers/local_vol_pricing.py`, `routers/simulation.py`) stay as they are, as decided (CLAUDE.md): neither extended nor removed in this work package.
+5. **The live Yahoo fallbacks** (`vol_surface.py`, `routers/local_vol_pricing.py`, `routers/simulation.py`) were **removed** (decided by the maintainer on 2026-11-26, during L5: Yahoo's data is not trusted as a backup). The Market page's Vol tab and Simulation's Black-Scholes and SABR calibration read the stored surface through `market_snapshot`, so they follow `QM_OPTION_DATA`; `yfinance` left the API's dependencies.
 6. **The other consumers of the chain** move with `market_snapshot`:
    - `calibration_warmup.py`;
    - `multi_asset_market.py`;
    - `routers/market_price_tape.py`;
    - the Market page's Vol tab.
 7. **Tests**: the stored SPY day's surface reprices its OTM mids within their bid/ask, and its log contract matches the market's (§8).
+
+### 5.8 As built and measured (L5, 2026-11-26)
+
+Code: `api/app/chain_iv.py` (flags, the zero-bid stop, D2's carrying), `market_snapshot` behind `QM_OPTION_DATA` (default `legacy`), and in C++ `RawOptionQuote::forward`/`discount` with `CleaningParams::ingestion_cleaned` (§6.1). PR #388.
+
+- **D2 as built.** SPY takes the same day's `^SPX` usable quotes, each scaled by F_SPY(T) / F_SPX(T): k, the IV and DF are unchanged. F_SPY(T) interpolates SPY's carry ln(F/S)/T linearly between its accepted expiries, flat beyond them (SPX lists to 2031, SPY to 2029). On a day with no SPX chain (every day before 2026-11-26), SPY takes its own de-Americanized quotes, with the warning `own_american_surface`.
+- **The surface.** On SPY 2026-11-26, the ATM vol from 3 months to 2 years is 19.3–19.7 % on `chain_iv`, against 17.0–19.7 % on `legacy` (the two-smiles defect of §1.1).
+- **The fit against the quotes it is fitted to.**
+
+  | | median miss | p90 | median in half-spreads | inside bid/ask |
+  |---|---|---|---|---|
+  | SPY, `legacy` | 0.55 vol pt | 4.87 | — | — |
+  | SPY on SPX, `chain_iv` | 0.14 | 0.42 | 1.8 | 28 % |
+  | AAPL, `legacy` | 1.49 | 6.00 | — | — |
+  | AAPL, `chain_iv` | 0.11 | 0.36 | 0.1 | > 90 % |
+
+  The §8 criterion, as amended, is met.
+- **SPY's cross-check (D2).** The ATM of the SPX-carried surface against SPY's own: −0.15 to −0.46 vol point beyond 6 months, about −1 point under 3 months. On the raw quotes (\|k\| < 0.01, no fit), SPY is 1.5–3 points above SPXW under a month, decaying roughly as 1/√T, while **XSP agrees with SPX within 0.1–0.3 point** on every short expiry. Not the cause: the forward (the carry and parity forwards differ by 1–2 bp), the de-Americanization (0.25–0.4 % of the price near the money), the time to expiry (the same `ttm`). A candidate not tested: SPY's quotes are 3–6 times wider than SPX's, on the afternoon before a holiday. To recheck once several SPX days are stored; until then a gap of this size on the short end is the "data alarm" of D2, not a reason to change the surface.
+- **Speed.** SPY on SPX calibrates 51 slices in about 4.4 s on a cache miss, against 1.2 s for 29 on `legacy`.
 
 ## 6. Review of the filters used so far (`CleaningParams`, `RawVolSurface`)
 
@@ -328,7 +347,7 @@ On every stored day, and as the acceptance of L2/L3/L5:
 - **Model-free references.** The variance swap by log contract on the OTM mids, and the digital put by slope less early exercise (`replication3.py` of #384, moved into `data-ingest`'s tests or a script of `scripts/`):
   - the surface's log contract within the market's tail range (§1.2);
   - the surface's digital within the market's error.
-- **Repricing.** The SVI and eSSVI surfaces reprice their OTM mids within bid/ask on most quotes; the share is measured and recorded.
+- **Repricing.** The fitted surface's median miss on the OTM quotes it is fitted to is within 2 half-spreads; the p90 and the share inside bid/ask are recorded, not required (decided 2026-11-26: on SPX's 1 % spreads a five-parameter SVI slice cannot sit inside every quote's bid/ask).
 - **The #384 measurement rerun**, at r = 4 %:
   - SVI on the old cleaning;
   - SVI on the new one;
@@ -344,7 +363,7 @@ On every stored day, and as the acceptance of L2/L3/L5:
 | L2 | `data-ingest` | `options-chain-iv`, European branch: parity forward and DF (§4.3), OTM, Black-76 by Jäckel, flags, registry, DAG task | **Done** (data-ingest #33): tests of §4.6 (round trip, European) passed; SPX/XSP day computed |
 | L3 | `data-ingest` | American branch: DF from SPX/XSP parity interpolated in T, SOFR fallback (D3); dividends (continuous for ETFs, discrete projected for stocks); tree de-Americanization; parity bounds; expiry rejection | **Done** (data-ingest #33): tests of §4.6 as amended in §4.7 |
 | L4 | `data-ingest` | Backfill of every stored day; method version | **Done** (data-ingest #33): `ingest run options-chain-iv --full`; counts per day logged |
-| L5 | this one | `market_snapshot` and `RawVolSurface` on `chain_iv`, stored forwards; S&P 500 products on the XSP/SPX surface, SPY's as a cross-check (D2); filters as §6 decides; the other consumers (§5.6) | the European surface reprices its OTM mids (§8); SPY's cross-check agrees within errors; pytest and C++ tests |
+| L5 | this one | `market_snapshot` and `RawVolSurface` on `chain_iv`, stored forwards; S&P 500 products on the XSP/SPX surface, SPY's as a cross-check (D2); filters as §6 decides; the other consumers (§5.6) | **Done** (PR #388, §5.8): median miss within 2 half-spreads; SPY's cross-check within 0.5 pt beyond 6 months, about 1 pt under 3 months (open, §5.8) |
 | L6 | this one | The pricers' forward (D1): market forwards and discounts per maturity, `rate` as an override (API field, Pricing page label); `QM_OPTION_DATA` switch (D5) | a vanilla reprices on the surface's forward under every model; `legacy` gives today's numbers bit for bit |
 | L7 | this one | The #384 measurement rerun (§8) and the maintainer's decision on E2 (#381) | table presented; WP 30 status updated |
 | L8 | both | Documentation: `options_chain.py`'s docstring, `docs/sources.md` (`data-ingest`), this file's status | `data-ingest` side and this file done; quant-modeling's own docs with L5 |
