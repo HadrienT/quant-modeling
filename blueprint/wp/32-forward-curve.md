@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | *In progress*: F1 and F2 done (2026-11-27, §4): `ForwardCurve` in the core and the Python module; the CPU single-underlying models step on it through `ScriptModelSpec::forward_curve`, which nothing sets yet (F5). F3–F6 remain. Issue #389 |
+| **Status** | *In progress*: F1, F2 and F3 done (2026-11-27, §4): `ForwardCurve` in the core and the Python module; the CPU single-underlying models step on it through `ScriptModelSpec::forward_curve`, which nothing sets yet (F5), with AAD risks per pillar. F4–F6 remain. Issue #389 |
 | **Depends on** | WP 31 L6 (the market's forwards and discounts reach the API), WP 17 (AAD), WP 19 (GPU Monte Carlo), WP 27 (generated adjoints) |
 | **Unlocks** | multi-date products on the market's carry; every model added after F1 |
 
@@ -55,3 +55,11 @@ Every model today takes a scalar `rate` and `dividend`: the CPU simulation model
 - **CPU only until F4.** `describe_device` refuses a model on a curve, so the GPU, the compiled IR and the JIT decline it and the engine stays on the CPU (an explicit GPU request says why).
 - **Set aside here.** A route's `control_mean` is a closed form on the scalars: it is not used on a curve (F6). Black-Scholes's Brownian-bridge survival over a step that contains a pillar assumes the step's average carry, an approximation of second order (the carry's change across a pillar is under 1 %/yr). Theta by bumped dates keeps the curve anchored to today.
 - `tests/testForwardCurveModels.cpp`, under every model: a flat curve bit for bit; numeraire, discounts and forwards are the curve's (zero coupons reprice DF(t)); E[S(t)/N(t)] = F(t) DF(t) at dates around the pillars and the dividend, which drops the deflated spot by its amount; where the drift does not feed the vol (Black-Scholes, Heston, rough Bergomi) a vanilla on the curve equals, path by path, the vanilla under the flat (r, q) fitted at its maturity, to 1e-11; Black-Scholes against Black's formula and Heston against its COS price on F(T), DF(T); the AAD rate and dividend against the shifted curve; a script through `simulate_script`.
+
+### F3 (2026-11-27)
+
+- **Discounting on DF(t) came with F2.** A script's payments are deflated by the model's numeraire, `e^{r t}/DF(t)` on a curve, and `df(T)` reads the model's discounts: nothing in the script engine discounts on its own, so F3 had nothing more to change there.
+- **The pillar risks are parameters, not a map after the run.** As the Hull-White hybrid's `CurveFactors` (and for its reason: each risk keeps its own Monte-Carlo error), every pillar has a shift, a model parameter at zero, appended after the model's own: `rate[j]` moves discount pillar j's zero rate, and the forward with it as the scalar rate does; `div[i]` moves forward pillar i's dividend yield. Through the curve's own interpolation weights, Δ ln DF(t) = −Σ w_j(t) t_j δ_j and Δ ln F(t) = Σ w_j(t) t_j δ_j − Σ u_i(t) t_i ε_i. Both interpolations reproduce a linear function of t (log-linear from the origin, a flat forward past the last pillar), so equal shifts are the parallel shift and the pillars sum to the scalar `rate` and `div`, which stay. A rate pillar is a pillar of the discount curve: a `ForwardCurve` on a flat-rate discount curve has none.
+- **Sparse on the tape.** The weights are local: each step and each event reads two to four pillars. `CurveCarry` tabulates their coefficients once (in each step's rate argument, each event's log numeraire, discount ratios and forward growths), and `ModelCurve<T>` adds them on the tape only: with T = Real nothing is read and the paths are F2's, bit for bit.
+- **Labels.** `rate[j]` and `div[i]` index `discount_curve().pillar_times()` and `pillar_times()`. `script_route` maps only the exact label `rate` to rho, so the pillars do not double count.
+- `tests/testForwardCurveModels.cpp`: under every model, the pathwise risk to each pillar against the bumped pillar (1e-6) and the pillars' sums against the scalar rho and dividend risk (1e-10); through `simulate_aad` on a script, the same sums, no risk to the pillars past the script's dates, and the same bits on four threads as on one.

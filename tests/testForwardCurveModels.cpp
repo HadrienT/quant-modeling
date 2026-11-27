@@ -4,12 +4,14 @@
 #include "quantModeling/core/date.hpp"
 #include "quantModeling/core/sample.hpp"
 #include "quantModeling/engines/mc/script_engine.hpp"
+#include "quantModeling/engines/mc/simulation_engine_aad.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/engines/analytic/heston_cos.hpp"
 #include "quantModeling/market/forward_curve.hpp"
 #include "quantModeling/models/equity/sabr.hpp"
 #include "quantModeling/scripting/script_model_factory.hpp"
+#include "quantModeling/utils/thread_pool.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -375,6 +377,160 @@ namespace quantModeling
         // The flat fit at t2 alone would miss the payment by its discount's error.
         const double flat_r = -std::log(c.discount(t2)) / t2;
         EXPECT_GT(std::abs(5.0 * std::exp(-flat_r * t1) - 5.0 * c.discount(t1)), 4.0 * r.std_errors[0]);
+    }
+
+    namespace
+    {
+        // The curve with one pillar bumped: the zero rate of pillar j by h
+        // (DF and F move together, as the scalar rate), or its dividend
+        // yield by h (F alone).
+        ForwardCurve bumped(const ForwardCurve &c, std::size_t j, bool rate, double h)
+        {
+            std::vector<Time> T = c.pillar_times();
+            std::vector<Real> F, DF = c.discount_curve().pillar_discount_factors();
+            for (const Real y : c.pillar_log_forwards())
+                F.push_back(c.spot() * std::exp(y));
+            if (rate)
+            {
+                DF[j] *= std::exp(-h * T[j]);
+                F[j] *= std::exp(h * T[j]);
+            }
+            else
+                F[j] *= std::exp(-h * T[j]);
+            return ForwardCurve::from_pillars(c.spot(), T, F, DF);
+        }
+
+        // A payoff that reads every curve quantity: a call, a discount and a
+        // forward at the first date, all deflated.
+        template <class T>
+        T payoff(const Scenario<T> &x)
+        {
+            using std::max;
+            return max(x[1].spots[0] - T(101.0), T(0.0)) / x[1].numeraire + x[0].discounts[1] / x[0].numeraire +
+                   0.01 * x[0].forwards[1] / x[0].numeraire;
+        }
+
+        std::size_t index_of(const std::vector<std::string> &labels, const std::string &l)
+        {
+            return static_cast<std::size_t>(std::find(labels.begin(), labels.end(), l) - labels.begin());
+        }
+    } // namespace
+
+    // WP 32 F3: the pathwise risk to each pillar's rate and dividend yield
+    // is the bumped pillar's, and they sum to the scalar rho and dividend
+    // risk, under every model.
+    TEST(ForwardCurveModels, PillarRisksMatchBumpsAndSumToTheScalars)
+    {
+        using aad::Number;
+        const ForwardCurve c = market_curve();
+        const std::size_t n = c.pillar_times().size();
+        const std::vector<Time> dates{61 * kDay, 146 * kDay};
+        for (const std::string &name : kModels)
+        {
+            ScriptModelSpec s = spec_of(name);
+            s.forward_curve = c;
+            Paths probe(s, dates);
+            std::mt19937_64 rng(11);
+            std::normal_distribution<double> normal;
+            std::vector<double> z(probe.model->sim_dim());
+            for (double &x : z)
+                x = 0.3 * normal(rng);
+            auto price_on = [&](const ForwardCurve &curve)
+            {
+                ScriptModelSpec b = s;
+                b.forward_curve = curve;
+                Paths p(b, dates);
+                p.model->generate_path(std::span<const double>(z), p.path);
+                return payoff(p.path);
+            };
+
+            aad::Tape tape;
+            aad::Tape *saved = Number::tape;
+            Number::tape = &tape;
+            auto m = make_script_model<Number>(s);
+            m->init(dates, defline_of(dates));
+            Scenario<Number> path;
+            allocate_scenario(path, defline_of(dates), 1);
+            m->generate_path(std::span<const double>(z), path);
+            Number v = payoff(path);
+            v.propagate_to_start();
+            const std::vector<std::string> labels = m->parameter_labels();
+            std::vector<double> adj;
+            for (Number *x : m->parameters())
+                adj.push_back(x->adjoint());
+            Number::tape = saved;
+
+            ASSERT_EQ(labels.size(), adj.size());
+            double rate_sum = 0.0, div_sum = 0.0;
+            const double h = 1e-6;
+            for (std::size_t j = 0; j < n; ++j)
+            {
+                const std::string jj = "[" + std::to_string(j) + "]";
+                const std::size_t ir = index_of(labels, "rate" + jj), iq = index_of(labels, "div" + jj);
+                ASSERT_LT(ir, labels.size()) << name << " rate" << jj;
+                ASSERT_LT(iq, labels.size()) << name << " div" << jj;
+                rate_sum += adj[ir];
+                div_sum += adj[iq];
+                const double fd_r = (price_on(bumped(c, j, true, h)) - price_on(bumped(c, j, true, -h))) / (2 * h);
+                const double fd_q = (price_on(bumped(c, j, false, h)) - price_on(bumped(c, j, false, -h))) / (2 * h);
+                EXPECT_NEAR(adj[ir], fd_r, 1e-6 * std::abs(fd_r) + 1e-7) << name << " rate" << jj;
+                EXPECT_NEAR(adj[iq], fd_q, 1e-6 * std::abs(fd_q) + 1e-7) << name << " div" << jj;
+            }
+            const double rho = adj[index_of(labels, "rate")], div = adj[index_of(labels, "div")];
+            EXPECT_NE(rho, 0.0) << name;
+            EXPECT_NEAR(rate_sum, rho, 1e-10 * std::abs(rho)) << name;
+            EXPECT_NEAR(div_sum, div, 1e-10 * std::abs(div)) << name;
+        }
+    }
+
+    // The same through the adjoint engine on a script: every pillar is a
+    // risk with its standard error, and the pillars sum to the scalars.
+    TEST(ForwardCurveModels, ScriptAdjointRisksPerPillar)
+    {
+        using aad::Number;
+        const ValuationContext ctx{Date::from_iso("2026-06-01")};
+        const std::string src = "2026-08-01\n    pays 5\n\n2026-10-21\n    pays max(spot() - 101, 0)\n";
+        const ForwardCurve c = market_curve();
+        for (const char *name : {"black_scholes", "local_vol"})
+        {
+            ScriptModelSpec s = spec_of(name);
+            s.forward_curve = c;
+            const ScriptedProduct<Number> product(src, ctx);
+            auto model = make_script_model<Number>(s);
+            const AADSimulResults r = simulate_aad(product, *model, 20000, 3);
+            const std::size_t n = c.pillar_times().size();
+            double rate_sum = 0.0, div_sum = 0.0;
+            for (std::size_t j = 0; j < n; ++j)
+            {
+                const std::size_t ir = index_of(r.risk_labels, "rate[" + std::to_string(j) + "]");
+                const std::size_t iq = index_of(r.risk_labels, "div[" + std::to_string(j) + "]");
+                ASSERT_LT(ir, r.risks.size()) << name;
+                ASSERT_LT(iq, r.risks.size()) << name;
+                rate_sum += r.risks[ir];
+                div_sum += r.risks[iq];
+            }
+            const double rho = r.risks[index_of(r.risk_labels, "rate")];
+            const double div = r.risks[index_of(r.risk_labels, "div")];
+            EXPECT_NEAR(rate_sum, rho, 1e-9 * std::abs(rho)) << name;
+            EXPECT_NEAR(div_sum, div, 1e-9 * std::abs(div)) << name;
+            // The payment of 5 on day 61 reads the discount pillars around
+            // it only: no risk to the pillars past the call's date.
+            const std::size_t last = index_of(r.risk_labels, "rate[" + std::to_string(n - 1) + "]");
+            EXPECT_EQ(r.risks[last], 0.0) << name;
+
+            // On threads, each with its clone: the pillar shifts are leaves
+            // of every clone's tape, the same bits as on one thread.
+            ThreadPool pool;
+            pool.start_on_demand(3);
+            auto m1 = make_script_model<Number>(s), m2 = make_script_model<Number>(s);
+            const AADSimulResults one = simulate_aad(product, *m1, 4096, 5, first_aad_payoff, RngKind::Philox,
+                                                     SamplerKind::PseudoRandom, nullptr, nullptr);
+            const AADSimulResults many = simulate_aad(product, *m2, 4096, 5, first_aad_payoff, RngKind::Philox,
+                                                      SamplerKind::PseudoRandom, nullptr, &pool);
+            ASSERT_EQ(one.risks.size(), many.risks.size());
+            for (std::size_t i = 0; i < one.risks.size(); ++i)
+                EXPECT_EQ(one.risks[i], many.risks[i]) << name << " " << one.risk_labels[i];
+        }
     }
 
     TEST(ForwardCurveModels, ModelsWithoutACurveRefuseIt)

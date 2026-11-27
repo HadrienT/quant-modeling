@@ -87,6 +87,7 @@ namespace quantModeling
         bool set_forward_curve(const ForwardCurve &curve) override
         {
             carry_.emplace(curve);
+            set_param_pointers(); // the pillar shifts (WP 32 F3)
             return true;
         }
 
@@ -225,7 +226,7 @@ namespace quantModeling
 
                 const T S_before = S;
                 // The step's rate: r, or the curve's carry over it plus r.
-                const T rk = carry_ ? T(T(carry_->step_rate(k)) + r_) : r_;
+                const T rk = carry_ ? carry_->step_rate(k, r_) : r_;
                 // Conditioned on the fine path (condition_on_fine_half_steps):
                 // the step is S_before e^{drift + sd z}, z = a + sqrt(1 - w) z',
                 // so its first w of the way ends at the midpoint below (the
@@ -309,7 +310,7 @@ namespace quantModeling
                     smp.inst_vol = mc::local_vol_bilinear(grid(), S, t);
                 if (carry_)
                 {
-                    write_curve_rates(*carry_, def, static_cast<std::size_t>(event), t, S, r_, q_, smp);
+                    carry_->write_rates(def, static_cast<std::size_t>(event), t, S, r_, q_, smp);
                     continue;
                 }
                 smp.numeraire = exp(r_ * t);
@@ -407,6 +408,8 @@ namespace quantModeling
                     labels_.push_back("lvol[" + std::to_string(i) + "," +
                                       std::to_string(j) + "]");
                 }
+            if (carry_)
+                carry_->append_parameters(params_, labels_);
         }
 
         T s0_{}, r_{}, q_{};
@@ -416,7 +419,7 @@ namespace quantModeling
         int refinement_ = 1; // multilevel Monte Carlo: each max_dt step split in r
         bool milstein_ = false;
         bool milstein_before_dates_ = false; ///< Milstein except on the steps reaching a date (#371)
-        std::optional<CurveCarry> carry_;    ///< WP 32: r_, q_ are then shifts over it
+        std::optional<ModelCurve<T>> carry_; ///< WP 32: r_, q_ are then shifts over it
         bool has_last_step_ = false;         ///< the defline asks for a lastStep*() expectation
         bool has_knock_out_ = false;         ///< the defline asks for a knock-out (#369)
 

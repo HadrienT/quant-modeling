@@ -144,6 +144,7 @@ namespace quantModeling
         bool set_forward_curve(const ForwardCurve &curve) override
         {
             carry_.emplace(curve);
+            set_param_pointers(); // the pillar shifts (WP 32 F3)
             return true;
         }
 
@@ -266,7 +267,7 @@ namespace quantModeling
                 // v * (dt / 2): the same bits as 0.5 * v * dt (a halving is
                 // exact), one tape node instead of two.
                 if (carry_) // the curve's carry over the step, ln F(t_i) / F(t_i-1)
-                    S = S * exp(sqrt(v_prev) * dz_i - v_prev * half_dt_ + (drift + carry_->step_rate(i - 1) * dt_));
+                    S = S * exp(sqrt(v_prev) * dz_i - v_prev * half_dt_ + (drift + carry_->step_log_carry(i - 1, dt_)));
                 else
                     S = S * exp(sqrt(v_prev) * dz_i - v_prev * half_dt_ + drift);
 
@@ -292,8 +293,7 @@ namespace quantModeling
         const std::vector<T *> &parameters() const override { return params_; }
         const std::vector<std::string> &parameter_labels() const override
         {
-            static const std::vector<std::string> labels{"spot", "rate", "div", "xi0", "eta", "rho"};
-            return labels;
+            return labels_;
         }
 
         Real H() const { return H_; }
@@ -357,7 +357,7 @@ namespace quantModeling
                 mc::fill_last_step(def, smp, S, T(0.0));
             if (carry_)
             {
-                write_curve_rates(*carry_, def, e, t, S, r_, q_, smp);
+                carry_->write_rates(def, e, t, S, r_, q_, smp);
                 return;
             }
             smp.numeraire = exp(r_ * t);
@@ -369,7 +369,13 @@ namespace quantModeling
                 smp.forwards[m] = S * exp((r_ - q_) * (def.forward_mats[m] - t));
         }
 
-        void set_param_pointers() { params_ = {&s0_, &r_, &q_, &xi0_, &eta_, &rho_}; }
+        void set_param_pointers()
+        {
+            params_ = {&s0_, &r_, &q_, &xi0_, &eta_, &rho_};
+            labels_ = {"spot", "rate", "div", "xi0", "eta", "rho"};
+            if (carry_)
+                carry_->append_parameters(params_, labels_);
+        }
 
         T s0_{}, r_{}, q_{}, xi0_{}, eta_{}, rho_{};
         Real H_;
@@ -389,9 +395,10 @@ namespace quantModeling
         std::vector<Real> compensator_;
         Real sqrt_dt_ = 0.0, half_dt_ = 0.0;
         std::size_t sim_dim_ = 0;
-        std::optional<CurveCarry> carry_; ///< WP 32: r_, q_ are then shifts over it
+        std::optional<ModelCurve<T>> carry_; ///< WP 32: r_, q_ are then shifts over it
 
         std::vector<T *> params_;
+        std::vector<std::string> labels_;
     };
 
 } // namespace quantModeling

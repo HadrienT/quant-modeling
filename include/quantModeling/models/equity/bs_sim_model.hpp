@@ -88,7 +88,7 @@ namespace quantModeling
         /// silently computed against the wrong object. Recomputing the
         /// pointers in a hand-written copy constructor is the fix.
         BlackScholesSimModel(const BlackScholesSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), sigma_(other.sigma_), curve_(other.curve_), carry_(other.carry_), timeline_(other.timeline_), defline_(other.defline_), steps_(other.steps_), sim_dim_(other.sim_dim_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), sigma_(other.sigma_), curve_(other.curve_), carry_(other.carry_), labels_(other.labels_), timeline_(other.timeline_), defline_(other.defline_), steps_(other.steps_), sim_dim_(other.sim_dim_)
         {
             set_param_pointers();
         }
@@ -100,6 +100,7 @@ namespace quantModeling
             if (curve_)
                 return false; // one term structure: the discount curve's, or this one
             carry_.emplace(curve);
+            set_param_pointers(); // the pillar shifts (WP 32 F3)
             return true;
         }
 
@@ -135,7 +136,7 @@ namespace quantModeling
                     const Time dt = t - t_prev;
                     if (carry_)
                     {
-                        const T rk = T(carry_->step_rate(i)) + r_;
+                        const T rk = carry_->step_rate(i, r_);
                         s.drift = (rk - q_ - 0.5 * sigma_ * sigma_) * dt;
                     }
                     else if (curve_)
@@ -239,7 +240,7 @@ namespace quantModeling
                 const SampleDef &def = defline_[i];
                 if (carry_)
                 {
-                    write_curve_rates(*carry_, def, i, st.t, S, r_, q_, smp);
+                    carry_->write_rates(def, i, st.t, S, r_, q_, smp);
                     continue;
                 }
                 smp.numeraire = curve_ ? T(1.0 / curve_->discount(st.t))
@@ -307,8 +308,7 @@ namespace quantModeling
         const std::vector<T *> &parameters() const override { return params_; }
         const std::vector<std::string> &parameter_labels() const override
         {
-            static const std::vector<std::string> labels{"spot", "rate", "div", "vol"};
-            return labels;
+            return labels_;
         }
 
       private:
@@ -320,7 +320,13 @@ namespace quantModeling
             T vol_sqrt_dt{};
         };
 
-        void set_param_pointers() { params_ = {&s0_, &r_, &q_, &sigma_}; }
+        void set_param_pointers()
+        {
+            params_ = {&s0_, &r_, &q_, &sigma_};
+            labels_ = {"spot", "rate", "div", "vol"};
+            if (carry_)
+                carry_->append_parameters(params_, labels_);
+        }
 
         /// P(t, T) — from the curve if there is one, else the flat formula.
         T discount_between(Time t, Time maturity) const
@@ -333,7 +339,8 @@ namespace quantModeling
 
         T s0_{}, r_{}, q_{}, sigma_{};
         const DiscountCurve *curve_ = nullptr; // non-owning; nullptr => flat r_
-        std::optional<CurveCarry> carry_;      // WP 32: r_, q_ are then shifts over it
+        std::optional<ModelCurve<T>> carry_;   // WP 32: r_, q_ are then shifts over it
+        std::vector<std::string> labels_;
         TimeLine timeline_;
         std::vector<SampleDef> defline_;
         std::vector<Step> steps_;

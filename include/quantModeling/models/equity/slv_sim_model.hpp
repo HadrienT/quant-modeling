@@ -90,6 +90,7 @@ namespace quantModeling
         bool set_forward_curve(const ForwardCurve &curve) override
         {
             carry_.emplace(curve);
+            set_param_pointers(); // the pillar shifts (WP 32 F3)
             return true;
         }
 
@@ -160,7 +161,7 @@ namespace quantModeling
                 const std::ptrdiff_t event = event_index_of_step_[i];
                 const T S_before = S;
                 // The step's rate: r, or the curve's carry over it plus r.
-                const T rk = carry_ ? T(T(carry_->step_rate(i)) + r_) : r_;
+                const T rk = carry_ ? carry_->step_rate(i, r_) : r_;
                 T var(0.0);
                 if (has_last_step_ && event >= 0) // the step's log-variance L^2 v+ dt, as slv_step takes it
                 {
@@ -225,7 +226,7 @@ namespace quantModeling
                     smp.inst_vol = mc::leverage_staircase(leverage_grid(), S, t) * sqrt(max(v, mc::variance_floor()));
                 if (carry_)
                 {
-                    write_curve_rates(*carry_, def, static_cast<std::size_t>(event), t, S, r_, q_, smp);
+                    carry_->write_rates(def, static_cast<std::size_t>(event), t, S, r_, q_, smp);
                     continue;
                 }
                 smp.numeraire = exp(r_ * t);
@@ -338,6 +339,8 @@ namespace quantModeling
                     params_.push_back(&leverage_[i * nT + j]);
                     labels_.push_back("leverage[" + std::to_string(i) + "," + std::to_string(j) + "]");
                 }
+            if (carry_)
+                carry_->append_parameters(params_, labels_);
         }
 
         T s0_{}, r_{}, q_{}, v0_{}, kappa_{}, theta_{}, xi_{}, rho_{};
@@ -346,7 +349,7 @@ namespace quantModeling
         Time max_dt_;
         int refinement_ = 1;                                    // multilevel Monte Carlo: each max_dt step split in r
         mc::VarianceScheme scheme_ = mc::VarianceScheme::Euler; // price runs only (#317)
-        std::optional<CurveCarry> carry_;                       ///< WP 32: r_, q_ are then shifts over it
+        std::optional<ModelCurve<T>> carry_;                    ///< WP 32: r_, q_ are then shifts over it
 
         TimeLine timeline_;
         TimeLine sim_timeline_;
