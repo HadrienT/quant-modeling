@@ -15,6 +15,7 @@
 
 namespace quantModeling
 {
+    class ForwardCurve; // market/forward_curve.hpp
 
     /**
      * @brief A model that can simulate scenarios for the timeline architecture.
@@ -204,6 +205,13 @@ namespace quantModeling
         /// `scheme` (#317). False when the model has no such choice. A model
         /// differentiated (T = aad::Number) always steps by Euler.
         virtual bool set_variance_scheme(mc::VarianceScheme /*scheme*/) { return false; }
+
+        /// Step on `curve`'s carry and discount on its DF(t) (WP 32 F2),
+        /// before init(). The model's own rate and dividend then become
+        /// parallel shifts over the curve: zero prices on the curve itself.
+        /// A model on a curve runs on the CPU (describe_device refuses it
+        /// until F4). False when the model cannot take a curve.
+        virtual bool set_forward_curve(const ForwardCurve & /*curve*/) { return false; }
 
         /// E[S_asset(t) / N(t)], the deflated spot's mean, when the model's
         /// discretisation keeps it a martingale -- what the generic control

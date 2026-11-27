@@ -4,6 +4,7 @@
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/equity/curve_carry.hpp"
 #include "quantModeling/models/equity/knock_out.hpp"
 #include "quantModeling/models/equity/last_step.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -72,6 +74,10 @@ namespace quantModeling
      * differentiated); max(v, 0)'s own kink, by contrast, *is* -- it uses
      * aad::max, which records a real (if kinked) subgradient, the same way
      * a local-vol grid lookup's clamped edges do.
+     *
+     * With a ForwardCurve (set_forward_curve, WP 32 F2), every step's rate
+     * argument is the curve's carry rate over it plus r, and discounting
+     * reads its DF(t) (curve_carry.hpp): r and q become parallel shifts.
      */
     template <class T = Real>
     class BatesSimModel final : public ISimulationModel<T>
@@ -100,12 +106,18 @@ namespace quantModeling
 
         /// See models/equity/bs_sim_model.hpp for why this exists.
         BatesSimModel(const BatesSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), lambda_(other.lambda_), jump_mean_(other.jump_mean_), jump_vol_(other.jump_vol_), max_dt_(other.max_dt_), refinement_(other.refinement_), scheme_(other.scheme_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_), has_last_step_(other.has_last_step_), has_knock_out_(other.has_knock_out_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), lambda_(other.lambda_), jump_mean_(other.jump_mean_), jump_vol_(other.jump_vol_), max_dt_(other.max_dt_), refinement_(other.refinement_), scheme_(other.scheme_), carry_(other.carry_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_), has_last_step_(other.has_last_step_), has_knock_out_(other.has_knock_out_)
         {
             set_param_pointers();
         }
 
         std::size_t n_underlyings() const override { return 1; }
+
+        bool set_forward_curve(const ForwardCurve &curve) override
+        {
+            carry_.emplace(curve);
+            return true;
+        }
 
         void init(const TimeLine &product_timeline,
                   const std::vector<SampleDef> &defline) override
@@ -125,6 +137,11 @@ namespace quantModeling
             defline_ = defline;
 
             event_index_of_step_ = event_index_of_step(sim_timeline_, timeline_);
+            if (carry_)
+            {
+                carry_->set_steps(sim_timeline_);
+                carry_->set_events(timeline_, defline_);
+            }
 
             // Every fine-grid step draws (add_monitoring_steps() only ever
             // returns points strictly after t = 0): diffusion, the vol
@@ -178,6 +195,8 @@ namespace quantModeling
                 const Time dt = t - t_prev;
                 const double sqdt = sqrt(dt);
                 const T S_before = S;
+                // The step's rate: r, or the curve's carry over it plus r.
+                const T rk = carry_ ? T(T(carry_->step_rate(i)) + r_) : r_;
 
                 const double z_spot = gaussians[g++];
                 const double z_vol_indep = gaussians[g++];
@@ -202,7 +221,7 @@ namespace quantModeling
                         if (scheme_ == mc::VarianceScheme::QE) // the variance first, then the spot's law given it
                         {
                             double mean, sd;
-                            mc::qe_variance_step(hp, 1.0, r_, q_, v, dt, z_spot, mean, sd);
+                            mc::qe_variance_step(hp, 1.0, rk, q_, v, dt, z_spot, mean, sd);
                             double z = z_vol_indep;
                             survival = mc::condition_on_survival(ko, log(S), mean, sd, z);
                             S = S * exp(mean + sd * z);
@@ -210,12 +229,12 @@ namespace quantModeling
                         }
                     if (!stepped) // Euler: z_spot drives the spot, then the variance through rho
                     {
-                        const T mean = (r_ - q_ - 0.5 * v_plus) * dt;
+                        const T mean = (rk - q_ - 0.5 * v_plus) * dt;
                         const T sd = sqrt_v_plus * sqdt;
                         T z(z_spot);
                         survival = mc::condition_on_survival(ko, T(log(S)), mean, sd, z);
                         // heston_log_return's grouping, as the IR's step
-                        S = S * exp(mc::heston_log_return(r_, q_, lambda_, k, v_plus, sqrt_v_plus, sqdt, dt, z));
+                        S = S * exp(mc::heston_log_return(rk, q_, lambda_, k, v_plus, sqrt_v_plus, sqdt, dt, z));
                         mc::heston_variance_step(hp, v, v_plus, sqrt_v_plus, sqdt, dt, z, z_vol_indep);
                         stepped = true;
                     }
@@ -228,7 +247,7 @@ namespace quantModeling
                         // QE for the diffusion (z_spot drives the variance,
                         // z_vol_indep the spot's independent part), the jump
                         // compensator in its drift, then the jumps.
-                        mc::qe_step(mc::HestonParamsT<T>{v0_, kappa_, theta_, xi_, rho_}, 1.0, r_ - lambda_ * k, q_,
+                        mc::qe_step(mc::HestonParamsT<T>{v0_, kappa_, theta_, xi_, rho_}, 1.0, rk - lambda_ * k, q_,
                                     S, v, dt, z_spot, z_vol_indep);
                         if (n_jumps > 0)
                         {
@@ -239,7 +258,7 @@ namespace quantModeling
                     }
                 if (!stepped)
                 {
-                    T log_return = mc::heston_log_return(r_, q_, lambda_, k, v_plus, sqrt_v_plus, sqdt, dt, z_spot);
+                    T log_return = mc::heston_log_return(rk, q_, lambda_, k, v_plus, sqrt_v_plus, sqdt, dt, z_spot);
                     if (n_jumps > 0)
                     {
                         const double n = static_cast<double>(n_jumps);
@@ -257,15 +276,19 @@ namespace quantModeling
                     continue;
                 if (has_last_step_) // given v: lognormal, forward S e^{(r - q) dt}, log-variance v+ dt
                     mc::fill_last_step(defline_[static_cast<std::size_t>(event)], path[static_cast<std::size_t>(event)],
-                                       T(S_before * exp((r_ - q_) * dt)), T(v_plus * dt));
+                                       T(S_before * exp((rk - q_) * dt)), T(v_plus * dt));
 
                 Sample<T> &smp = path[static_cast<std::size_t>(event)];
                 smp.spots.assign(1, S);
-                smp.numeraire = exp(r_ * t);
-
                 const SampleDef &def = defline_[static_cast<std::size_t>(event)];
                 if (def.inst_vol) // the diffusion's vol from here (jumps aside): sqrt(v_t+)
                     smp.inst_vol = sqrt(max(v, kVarianceFloor));
+                if (carry_)
+                {
+                    write_curve_rates(*carry_, def, static_cast<std::size_t>(event), t, S, r_, q_, smp);
+                    continue;
+                }
+                smp.numeraire = exp(r_ * t);
                 smp.discounts.resize(def.discount_mats.size());
                 for (std::size_t m = 0; m < def.discount_mats.size(); ++m)
                     smp.discounts[m] = exp(-r_ * (def.discount_mats[m] - t));
@@ -296,8 +319,8 @@ namespace quantModeling
                 return false;
             else
             {
-                if (lambda_ != 0.0)
-                    return false; // jumps stay on the CPU
+                if (lambda_ != 0.0 || carry_)
+                    return false; // jumps stay on the CPU; the device has a flat rate (WP 32 F4)
                 d = DeviceModel{};
                 d.kind = DeviceModel::Kind::Heston;
                 d.r = r_;
@@ -324,6 +347,8 @@ namespace quantModeling
             if (asset != 0)
                 return false;
             mean = to_double(s0_) * std::exp(-to_double(q_) * t);
+            if (carry_)
+                mean *= carry_->deflated_spot_ratio(t);
             return true;
         }
 
@@ -369,6 +394,7 @@ namespace quantModeling
         Time max_dt_;
         int refinement_ = 1;                                    // multilevel Monte Carlo: each max_dt step split in r
         mc::VarianceScheme scheme_ = mc::VarianceScheme::Euler; // price runs only (#317)
+        std::optional<CurveCarry> carry_;                       ///< WP 32: r_, q_ are then shifts over it
 
         TimeLine timeline_;     // the product's own event dates
         TimeLine sim_timeline_; // timeline_ plus internal Euler steps

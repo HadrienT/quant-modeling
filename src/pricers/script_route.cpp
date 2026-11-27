@@ -92,7 +92,9 @@ namespace quantModeling
             // serves the product whatever its terms and its dates (WP 27
             // lot L1b).
             s.terms_as_parameters = true;
-            if (route.control_mean)
+            // A route's control mean is a closed form on the scalar rate and
+            // dividend: on a forward curve it would be the wrong one (WP 32 F6).
+            if (route.control_mean && !spec.forward_curve)
                 s.control_mean = route.control_mean(spec, days);
             return s;
         }
@@ -364,8 +366,16 @@ namespace quantModeling
         if (fd[3])
         {
             scripting::ScriptModelSpec ru = route.model, rd = route.model;
-            ru.rate += bumps.rho_bump;
-            rd.rate -= bumps.rho_bump;
+            if (route.model.forward_curve) // the rate is the curve's (WP 32): shift it
+            {
+                ru.forward_curve = route.model.forward_curve->shifted(bumps.rho_bump, 0.0);
+                rd.forward_curve = route.model.forward_curve->shifted(-bumps.rho_bump, 0.0);
+            }
+            else
+            {
+                ru.rate += bumps.rho_bump;
+                rd.rate -= bumps.rho_bump;
+            }
             const SimulationMCResult rhu = run(route, ru, 0, settings, rule, workers), rhd = run(route, rd, 0, settings, rule, workers);
             const Difference rho = difference({&rhu, &rhd}, {1.0, -1.0}, 2.0 * bumps.rho_bump);
             res.greeks.rho = rho.value;

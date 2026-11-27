@@ -65,6 +65,13 @@ namespace quantModeling
         /// rate(t1, t2) − carry(t1, t2).
         Real dividend(Time t1, Time t2) const;
 
+        /// The curve under parallel shifts of its rate and its dividend
+        /// yield: DF(t) e^{−dr t} and F(t) e^{(dr − dq) t}, exact on the
+        /// pillars and in a flat-forward extrapolation (a discount curve
+        /// that holds its discount factor flat past its pillars shifts
+        /// there by e^{−dr t_n} only). What a bumped rho is computed on.
+        ForwardCurve shifted(Real rate_shift, Real dividend_shift) const;
+
         bool is_flat() const { return flat_; }
         /// The scalars of a flat curve (zero otherwise).
         Real flat_rate() const { return flat_rate_; }

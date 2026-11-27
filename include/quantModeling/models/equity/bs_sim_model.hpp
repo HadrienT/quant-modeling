@@ -5,6 +5,7 @@
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/market/discount_curve.hpp"
 #include "quantModeling/models/equity/black_scholes.hpp"
+#include "quantModeling/models/equity/curve_carry.hpp"
 #include "quantModeling/models/equity/knock_out.hpp"
 #include "quantModeling/models/equity/last_step.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -42,6 +44,10 @@ namespace quantModeling
      * flat number. The curve itself is always double, non-owning, and not a
      * differentiable parameter here (its own risk -- the "superbucket" --
      * is blueprint/wp/17-aad.md §11, later and harder).
+     *
+     * With a ForwardCurve (set_forward_curve, WP 32 F2), each step's drift is
+     * the curve's carry over it, (c_k + r − q − σ²/2) Δt with r and q
+     * parallel shifts (curve_carry.hpp), and discounting reads its DF(t).
      *
      * s0_, r_, q_, sigma_ are T: with T = aad::Number, every one of them is a
      * differentiable model parameter (blueprint §6.2). Everything that does
@@ -82,12 +88,20 @@ namespace quantModeling
         /// silently computed against the wrong object. Recomputing the
         /// pointers in a hand-written copy constructor is the fix.
         BlackScholesSimModel(const BlackScholesSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), sigma_(other.sigma_), curve_(other.curve_), timeline_(other.timeline_), defline_(other.defline_), steps_(other.steps_), sim_dim_(other.sim_dim_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), sigma_(other.sigma_), curve_(other.curve_), carry_(other.carry_), timeline_(other.timeline_), defline_(other.defline_), steps_(other.steps_), sim_dim_(other.sim_dim_)
         {
             set_param_pointers();
         }
 
         std::size_t n_underlyings() const override { return 1; }
+
+        bool set_forward_curve(const ForwardCurve &curve) override
+        {
+            if (curve_)
+                return false; // one term structure: the discount curve's, or this one
+            carry_.emplace(curve);
+            return true;
+        }
 
         void init(const TimeLine &product_timeline,
                   const std::vector<SampleDef> &defline) override
@@ -101,19 +115,30 @@ namespace quantModeling
             check_barrier_assets(defline_, 1, "BlackScholesSimModel");
 
             const T mu = r_ - q_ - 0.5 * sigma_ * sigma_; // flat-rate case only
+            if (carry_)
+            {
+                carry_->set_steps(timeline_);
+                carry_->set_events(timeline_, defline_);
+            }
             steps_.clear();
             sim_dim_ = 0;
             Time t_prev = 0.0;
             Real log_df_prev = 0.0; // ln DF(0) = 0 -- the curve is always double
-            for (const Time t : timeline_)
+            for (std::size_t i = 0; i < timeline_.size(); ++i)
             {
+                const Time t = timeline_[i];
                 Step s;
                 s.t = t;
                 s.draws = (t > TIMELINE_EPS);
                 if (s.draws)
                 {
                     const Time dt = t - t_prev;
-                    if (curve_)
+                    if (carry_)
+                    {
+                        const T rk = T(carry_->step_rate(i)) + r_;
+                        s.drift = (rk - q_ - 0.5 * sigma_ * sigma_) * dt;
+                    }
+                    else if (curve_)
                     {
                         const Real log_df_t = log(curve_->discount(t));
                         s.drift = (log_df_prev - log_df_t) - q_ * dt -
@@ -211,10 +236,15 @@ namespace quantModeling
                         mc::fill_last_step(mdef, smp, st.draws ? T(S_before * exp(st.drift + 0.5 * var)) : S_before,
                                            var);
                 }
+                const SampleDef &def = defline_[i];
+                if (carry_)
+                {
+                    write_curve_rates(*carry_, def, i, st.t, S, r_, q_, smp);
+                    continue;
+                }
                 smp.numeraire = curve_ ? T(1.0 / curve_->discount(st.t))
                                        : T(exp(r_ * st.t));
 
-                const SampleDef &def = defline_[i];
                 smp.discounts.resize(def.discount_mats.size());
                 for (std::size_t k = 0; k < def.discount_mats.size(); ++k)
                     smp.discounts[k] = discount_between(st.t, def.discount_mats[k]);
@@ -243,8 +273,8 @@ namespace quantModeling
                 return false;
             else
             {
-                if (curve_)
-                    return false; // the device has a flat rate only
+                if (curve_ || carry_)
+                    return false; // the device has a flat rate only (WP 32 F4)
                 d = DeviceModel{};
                 d.kind = DeviceModel::Kind::BlackScholes;
                 d.r = r_;
@@ -269,6 +299,8 @@ namespace quantModeling
         bool deflated_spot_mean(std::size_t, Time t, Real &mean) const override
         {
             mean = to_double(s0_) * std::exp(-to_double(q_) * t);
+            if (carry_)
+                mean *= carry_->deflated_spot_ratio(t);
             return true;
         }
 
@@ -301,6 +333,7 @@ namespace quantModeling
 
         T s0_{}, r_{}, q_{}, sigma_{};
         const DiscountCurve *curve_ = nullptr; // non-owning; nullptr => flat r_
+        std::optional<CurveCarry> carry_;      // WP 32: r_, q_ are then shifts over it
         TimeLine timeline_;
         std::vector<SampleDef> defline_;
         std::vector<Step> steps_;

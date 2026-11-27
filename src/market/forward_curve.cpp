@@ -56,6 +56,28 @@ namespace quantModeling
         return ForwardCurve(spot, std::move(discount), std::move(times), std::move(forwards));
     }
 
+    ForwardCurve ForwardCurve::shifted(Real rate_shift, Real dividend_shift) const
+    {
+        if (flat_)
+            return flat(spot_, flat_rate_ + rate_shift, flat_dividend_ + dividend_shift);
+        const std::vector<Time> &dt = discount_.pillar_times();
+        DiscountCurve discount = [&]
+        {
+            if (dt.empty()) // a flat-rate discount curve
+                return DiscountCurve(-std::log(discount_.discount(1.0)) + rate_shift);
+            std::vector<Real> dfs;
+            dfs.reserve(dt.size());
+            for (std::size_t i = 0; i < dt.size(); ++i)
+                dfs.push_back(discount_.pillar_discount_factors()[i] * std::exp(-rate_shift * dt[i]));
+            return DiscountCurve(dt, std::move(dfs), discount_.extrapolation());
+        }();
+        std::vector<Real> forwards;
+        forwards.reserve(times_.size());
+        for (std::size_t i = 0; i < times_.size(); ++i)
+            forwards.push_back(spot_ * std::exp(log_fwd_[i] + (rate_shift - dividend_shift) * times_[i]));
+        return ForwardCurve(spot_, std::move(discount), times_, std::move(forwards));
+    }
+
     Real ForwardCurve::log_forward(Time t) const
     {
         if (flat_)

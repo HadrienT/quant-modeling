@@ -416,6 +416,7 @@ if(QM_BUILD_TESTS)
     tests/testPDE.cpp
     tests/testDiscountCurve.cpp
     tests/testForwardCurve.cpp
+    tests/testForwardCurveModels.cpp
     tests/testCurveBootstrap.cpp
     tests/testCredit.cpp
     tests/testMertonStructural.cpp

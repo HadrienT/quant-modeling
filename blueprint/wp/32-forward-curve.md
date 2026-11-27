@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | *In progress*: F1 done (2026-11-27, §4): `ForwardCurve` in the core and the Python module, no model reads it yet. F2–F6 remain. Issue #389 |
+| **Status** | *In progress*: F1 and F2 done (2026-11-27, §4): `ForwardCurve` in the core and the Python module; the CPU single-underlying models step on it through `ScriptModelSpec::forward_curve`, which nothing sets yet (F5). F3–F6 remain. Issue #389 |
 | **Depends on** | WP 31 L6 (the market's forwards and discounts reach the API), WP 17 (AAD), WP 19 (GPU Monte Carlo), WP 27 (generated adjoints) |
 | **Unlocks** | multi-date products on the market's carry; every model added after F1 |
 
@@ -45,3 +45,13 @@ Every model today takes a scalar `rate` and `dividend`: the CPU simulation model
 - `dividend(t1, t2) = rate − carry`, the integrated dividend yield (repo included): the leg a model with a separate rate and yield (a numeraire, a quanto drift) needs.
 - `log_forward_weights(t)` gives ln F(t) as a combination of the pillars' ln F, as `DiscountCurve::log_discount_weights` does for ln DF: the risks per forward pillar of F3 are built on it.
 - `tests/testForwardCurve.cpp`: the flat curve's expressions bit for bit; pillars repriced; carry and rate telescoping over any grid, extrapolation included; zero coupons reprice DF(t) and F·DF = S0 e^{−∫q}; E[S_t] = F(t) under exact lognormal steps on a grid that ignores the pillars (200,000 paths, 4 standard errors); a cash dividend as two pillars a second apart, exact away from the gap; the weights against pillar bumps.
+
+### F2 (2026-11-27)
+
+- **The contract.** `ISimulationModel::set_forward_curve(curve)`, before `init()`; `ScriptModelSpec::forward_curve` (optional) is read by `make_script_model`. Black-Scholes, local vol, Heston (and Bates), SLV and rough Bergomi take it. The several-underlying models, the Hull-White hybrid and the short-rate models refuse a curve with an explicit error: a multi-asset curve needs one forward per asset over one discount curve, left for when a multi-asset product needs it.
+- **A flat curve is its scalars.** The factory turns `ForwardCurve::flat(S0, r, q)` back into (r, q) and today's path: every model's paths are bit for bit those of the scalars (tested), and the device route is unchanged.
+- **Rate and dividend become parallel shifts.** On a curve the model's `rate` and `div` parameters are zero and shift the curve: step k's rate argument is `c_k + r` with `c_k = ln F(t_k)/F(t_{k−1}) / Δt_k`, the numeraire `e^{r t}/DF(t)`, a discount `DF(m)/DF(t) e^{−r(m−t)}`, a forward `S F(m)/F(t) e^{(r−q)(m−t)}`. So the AAD rho and dividend risk are those of a parallel shift of the curve (tested against `ForwardCurve::shifted`), the sums the per-pillar risks of F3 will split. The bumped rho of `script_route` bumps the curve the same way (`shifted(±h, 0)`).
+- **No curve lookup on a path.** `CurveCarry` (`models/equity/curve_carry.hpp`) tabulates in `init()` the carry rate of every step and, per event, 1/DF, the discount ratios and the forward growths a payoff reads. The step functors shared with the IR (`path_steps.hpp`) are unchanged: they receive `c_k + r` where they received `r`.
+- **CPU only until F4.** `describe_device` refuses a model on a curve, so the GPU, the compiled IR and the JIT decline it and the engine stays on the CPU (an explicit GPU request says why).
+- **Set aside here.** A route's `control_mean` is a closed form on the scalars: it is not used on a curve (F6). Black-Scholes's Brownian-bridge survival over a step that contains a pillar assumes the step's average carry, an approximation of second order (the carry's change across a pillar is under 1 %/yr). Theta by bumped dates keeps the curve anchored to today.
+- `tests/testForwardCurveModels.cpp`, under every model: a flat curve bit for bit; numeraire, discounts and forwards are the curve's (zero coupons reprice DF(t)); E[S(t)/N(t)] = F(t) DF(t) at dates around the pillars and the dividend, which drops the deflated spot by its amount; where the drift does not feed the vol (Black-Scholes, Heston, rough Bergomi) a vanilla on the curve equals, path by path, the vanilla under the flat (r, q) fitted at its maturity, to 1e-11; Black-Scholes against Black's formula and Heston against its COS price on F(T), DF(T); the AAD rate and dividend against the shifted curve; a script through `simulate_script`.

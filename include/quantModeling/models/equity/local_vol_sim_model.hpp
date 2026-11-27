@@ -4,6 +4,7 @@
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/equity/curve_carry.hpp"
 #include "quantModeling/models/equity/knock_out.hpp"
 #include "quantModeling/models/equity/last_step.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -46,6 +48,10 @@ namespace quantModeling
      * corners with double bilinear weights, so it records a derivative
      * exactly with respect to whichever corners were touched -- not the
      * whole grid -- for every step of every path.
+     *
+     * With a ForwardCurve (set_forward_curve, WP 32 F2), every step's rate
+     * argument is the curve's carry rate over it plus r, and discounting
+     * reads its DF(t) (curve_carry.hpp): r and q become parallel shifts.
      */
     template <class T = Real>
     class LocalVolSimModel final : public ISimulationModel<T>
@@ -71,12 +77,18 @@ namespace quantModeling
         /// caches pointers into *this* object's own members, so a naive
         /// copy would leave them pointing at the original.
         LocalVolSimModel(const LocalVolSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), sigma_loc_(other.sigma_loc_), max_dt_(other.max_dt_), refinement_(other.refinement_), milstein_(other.milstein_), milstein_before_dates_(other.milstein_before_dates_), has_last_step_(other.has_last_step_), has_knock_out_(other.has_knock_out_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), sigma_loc_(other.sigma_loc_), max_dt_(other.max_dt_), refinement_(other.refinement_), milstein_(other.milstein_), milstein_before_dates_(other.milstein_before_dates_), carry_(other.carry_), has_last_step_(other.has_last_step_), has_knock_out_(other.has_knock_out_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
         {
             set_param_pointers();
         }
 
         std::size_t n_underlyings() const override { return 1; }
+
+        bool set_forward_curve(const ForwardCurve &curve) override
+        {
+            carry_.emplace(curve);
+            return true;
+        }
 
         void init(const TimeLine &product_timeline,
                   const std::vector<SampleDef> &defline) override
@@ -100,6 +112,11 @@ namespace quantModeling
                 }
 
             event_index_of_step_ = event_index_of_step(sim_timeline_, timeline_);
+            if (carry_)
+            {
+                carry_->set_steps(sim_timeline_);
+                carry_->set_events(timeline_, defline_);
+            }
 
             // Every fine-grid step draws: add_monitoring_steps() only ever
             // returns points strictly after t = 0 (blueprint's own "draws"
@@ -207,6 +224,8 @@ namespace quantModeling
                 const Time dt = t - t_prev;
 
                 const T S_before = S;
+                // The step's rate: r, or the curve's carry over it plus r.
+                const T rk = carry_ ? T(T(carry_->step_rate(k)) + r_) : r_;
                 // Conditioned on the fine path (condition_on_fine_half_steps):
                 // the step is S_before e^{drift + sd z}, z = a + sqrt(1 - w) z',
                 // so its first w of the way ends at the midpoint below (the
@@ -228,7 +247,7 @@ namespace quantModeling
                 {
                     using std::log;
                     const T sig = mc::local_vol_bilinear(grid(), S, t);
-                    const T step_drift = (r_ - q_ - 0.5 * sig * sig) * dt; // local_vol_step's
+                    const T step_drift = (rk - q_ - 0.5 * sig * sig) * dt; // local_vol_step's
                     const T vol_sqrt_dt = sig * sqrt(dt);
                     var = vol_sqrt_dt * vol_sqrt_dt;
                     const double rest = 1.0 - w; // the conditioned share of the step
@@ -239,14 +258,14 @@ namespace quantModeling
                     if (conditioned)
                         S = S_start * exp(mean + sd * z);
                     else // the plain step on the conditioned draw: the IR's step, bit for bit
-                        mc::local_vol_step(grid(), r_, q_, S, t, dt, z);
+                        mc::local_vol_step(grid(), rk, q_, S, t, dt, z);
                 }
                 else
                     var = milstein_ || (milstein_before_dates_ && reached < 0)
-                              ? mc::local_vol_milstein_step(grid(), r_, q_, S, t, dt, gaussians[k])
-                              : mc::local_vol_step(grid(), r_, q_, S, t, dt, gaussians[k]);
+                              ? mc::local_vol_milstein_step(grid(), rk, q_, S, t, dt, gaussians[k])
+                              : mc::local_vol_step(grid(), rk, q_, S, t, dt, gaussians[k]);
                 t_prev = t;
-                const T drift = (r_ - q_) * dt - 0.5 * var; // local_vol_step's, (r - q - sigma^2 / 2) dt
+                const T drift = (rk - q_) * dt - 0.5 * var; // local_vol_step's, (r - q - sigma^2 / 2) dt
 
                 if (next < defline_.size())
                 {
@@ -277,7 +296,7 @@ namespace quantModeling
                         mc::fill_last_step(d, smp, T(S_before * exp(drift + sqrt(var) * a + 0.5 * var * (1.0 - w))),
                                            T(var * (1.0 - w)));
                     else
-                        mc::fill_last_step(d, smp, T(S_before * exp((r_ - q_) * dt)), var);
+                        mc::fill_last_step(d, smp, T(S_before * exp((rk - q_) * dt)), var);
                 }
                 next = static_cast<std::size_t>(event) + 1;
                 if (next < defline_.size())
@@ -285,11 +304,15 @@ namespace quantModeling
 
                 Sample<T> &smp = path[static_cast<std::size_t>(event)];
                 smp.spots.assign(1, S);
-                smp.numeraire = exp(r_ * t);
-
                 const SampleDef &def = defline_[static_cast<std::size_t>(event)];
                 if (def.inst_vol)
                     smp.inst_vol = mc::local_vol_bilinear(grid(), S, t);
+                if (carry_)
+                {
+                    write_curve_rates(*carry_, def, static_cast<std::size_t>(event), t, S, r_, q_, smp);
+                    continue;
+                }
+                smp.numeraire = exp(r_ * t);
                 smp.discounts.resize(def.discount_mats.size());
                 for (std::size_t m = 0; m < def.discount_mats.size(); ++m)
                     smp.discounts[m] = exp(-r_ * (def.discount_mats[m] - t));
@@ -316,8 +339,8 @@ namespace quantModeling
                 return false;
             else
             {
-                if (milstein_)
-                    return false; // the device's step into a date is log-Euler
+                if (milstein_ || carry_)
+                    return false; // the device's step into a date is log-Euler; a flat rate (WP 32 F4)
                 d = DeviceModel{};
                 d.kind = DeviceModel::Kind::LocalVol;
                 d.r = r_;
@@ -343,6 +366,8 @@ namespace quantModeling
             if (asset != 0 || milstein_ || milstein_before_dates_)
                 return false;
             mean = to_double(s0_) * std::exp(-to_double(q_) * t);
+            if (carry_)
+                mean *= carry_->deflated_spot_ratio(t);
             return true;
         }
 
@@ -391,6 +416,7 @@ namespace quantModeling
         int refinement_ = 1; // multilevel Monte Carlo: each max_dt step split in r
         bool milstein_ = false;
         bool milstein_before_dates_ = false; ///< Milstein except on the steps reaching a date (#371)
+        std::optional<CurveCarry> carry_;    ///< WP 32: r_, q_ are then shifts over it
         bool has_last_step_ = false;         ///< the defline asks for a lastStep*() expectation
         bool has_knock_out_ = false;         ///< the defline asks for a knock-out (#369)
 
