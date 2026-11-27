@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | *In progress*: design only (2026-11-26); no lot started. Issue #389 |
+| **Status** | *In progress*: F1 done (2026-11-27, §4): `ForwardCurve` in the core and the Python module, no model reads it yet. F2–F6 remain. Issue #389 |
 | **Depends on** | WP 31 L6 (the market's forwards and discounts reach the API), WP 17 (AAD), WP 19 (GPU Monte Carlo), WP 27 (generated adjoints) |
 | **Unlocks** | multi-date products on the market's carry; every model added after F1 |
 
@@ -35,3 +35,13 @@ Every model today takes a scalar `rate` and `dividend`: the CPU simulation model
 | F6 | Analytic engines | closed forms on the curve match the Monte Carlo |
 
 **Rule from F1 on:** a new model takes the curve from day one.
+
+## 4. As built
+
+### F1 (2026-11-27)
+
+- `include/quantModeling/market/forward_curve.hpp`, `src/market/forward_curve.cpp`; `qm.ForwardCurve` in the Python module (`bind_market.cpp`), built from (spot, times, forwards, discount factors) or `ForwardCurve.flat(spot, rate, dividend)`.
+- **The flat curve keeps its scalars.** `flat(S0, r, q)` stores (r, q) and evaluates the models' own expressions: `forward(t) = S0 e^{(r − q) t}`, `discount(t) = e^{−r t}`, `carry(t1, t2) = (r − q)(t2 − t1)`. Bit for bit with those expressions is tested. It does not make a model's price bit for bit on its own: several models fold the drift into one constant, `(r − q − σ²/2) Δt`, which `carry − σ²Δt/2` does not reproduce to the last bit. So F2 keeps each model's scalar path when `is_flat()`, and reads the curve otherwise; `flat_rate()` and `flat_dividend()` hand the scalars back.
+- `dividend(t1, t2) = rate − carry`, the integrated dividend yield (repo included): the leg a model with a separate rate and yield (a numeraire, a quanto drift) needs.
+- `log_forward_weights(t)` gives ln F(t) as a combination of the pillars' ln F, as `DiscountCurve::log_discount_weights` does for ln DF: the risks per forward pillar of F3 are built on it.
+- `tests/testForwardCurve.cpp`: the flat curve's expressions bit for bit; pillars repriced; carry and rate telescoping over any grid, extrapolation included; zero coupons reprice DF(t) and F·DF = S0 e^{−∫q}; E[S_t] = F(t) under exact lognormal steps on a grid that ignores the pillars (200,000 paths, 4 standard errors); a cash dividend as two pillars a second apart, exact away from the gap; the weights against pillar bumps.

@@ -16,6 +16,7 @@
 #include "quantModeling/engines/mc/simulation_engine_aad.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/curve_bootstrap.hpp"
+#include "quantModeling/market/forward_curve.hpp"
 #include "quantModeling/market/vol_surface_pipeline.hpp"
 #include "quantModeling/market/rough_bergomi_calibration.hpp"
 #include "quantModeling/engines/xva/cross_currency_exposure_engine.hpp"
@@ -432,6 +433,28 @@ static py::dict distribution_to_py(const quantModeling::PathDistribution &r)
 
 void register_market(py::module_ &m)
 {
+    // The equity forward curve (WP 32): what the models will read in place of
+    // a scalar rate and dividend yield. Times in years, rates integrated.
+    py::class_<quantModeling::ForwardCurve>(m, "ForwardCurve",
+                                            "Equity forward curve: spot, forwards F(t) and discount "
+                                            "factors DF(t) on pillars (blueprint/wp/32-forward-curve.md).")
+        .def(py::init(&quantModeling::ForwardCurve::from_pillars), py::arg("spot"), py::arg("times"),
+             py::arg("forwards"), py::arg("discount_factors"),
+             "Forwards and discount factors on the same pillars (the market's expiries); ln F and "
+             "ln DF linear in t between them, flat carry and forward rate outside.")
+        .def_static("flat", &quantModeling::ForwardCurve::flat, py::arg("spot"), py::arg("rate"),
+                    py::arg("dividend"), "The flat curve of a scalar rate and dividend yield.")
+        .def_property_readonly("spot", &quantModeling::ForwardCurve::spot)
+        .def_property_readonly("is_flat", &quantModeling::ForwardCurve::is_flat)
+        .def("forward", &quantModeling::ForwardCurve::forward, py::arg("t"), "F(t).")
+        .def("discount", &quantModeling::ForwardCurve::discount, py::arg("t"), "DF(t).")
+        .def("carry", &quantModeling::ForwardCurve::carry, py::arg("t1"), py::arg("t2"),
+             "ln F(t2) / F(t1).")
+        .def("rate", &quantModeling::ForwardCurve::rate, py::arg("t1"), py::arg("t2"),
+             "ln DF(t1) / DF(t2).")
+        .def("dividend", &quantModeling::ForwardCurve::dividend, py::arg("t1"), py::arg("t2"),
+             "rate(t1, t2) - carry(t1, t2): the integrated dividend yield, repo included.");
+
     m.def("dupire_superbucket", &dupire_superbucket_impl, py::arg("slices"), py::arg("spot"),
           py::arg("rate"), py::arg("dividend"), py::arg("k_min"), py::arg("k_max"),
           py::arg("n_strikes"), py::arg("n_maturities"), py::arg("dV_dsigma_loc"),

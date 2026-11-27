@@ -72,6 +72,7 @@ target_sources(quantModeling
         src/engines/tree/trinomial.cpp
         src/engines/pde/european_vanilla.cpp
         src/market/discount_curve.cpp
+        src/market/forward_curve.cpp
         src/market/curve_bootstrap.cpp
         src/market/credit_curve.cpp
         src/market/credit_bootstrap.cpp
@@ -414,6 +415,7 @@ if(QM_BUILD_TESTS)
     tests/testTrinomial.cpp
     tests/testPDE.cpp
     tests/testDiscountCurve.cpp
+    tests/testForwardCurve.cpp
     tests/testCurveBootstrap.cpp
     tests/testCredit.cpp
     tests/testMertonStructural.cpp
