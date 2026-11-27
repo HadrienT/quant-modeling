@@ -31,7 +31,11 @@ function Cell({ risk }: { risk?: Risk }) {
 	if (!risk || (risk.value === 0 && risk.std_error === 0))
 		return <span className="text-ink-muted">0</span>;
 	return (
-		<Uncertainty value={risk.value} stdError={risk.std_error} magnitude="greek" />
+		<Uncertainty
+			value={risk.value}
+			stdError={risk.std_error}
+			magnitude="greek"
+		/>
 	);
 }
 
@@ -49,7 +53,7 @@ export function CurveRisks({ pillars }: { pillars: Risk[] }) {
 	if (all.length === 0) return null;
 	return (
 		<details className="text-sm">
-			<summary className="cursor-pointer select-none text-2xs text-ink-muted uppercase">
+			<summary className="cursor-pointer text-2xs text-ink-muted uppercase select-none">
 				Rho and dividend by expiry · {read.length} of {all.length} expiries
 			</summary>
 			<table className="mt-2 w-full">
