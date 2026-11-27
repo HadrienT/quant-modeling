@@ -5,6 +5,7 @@
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/engines/mc/rough_bergomi_surface.hpp"
+#include "quantModeling/models/equity/curve_carry.hpp"
 #include "quantModeling/models/equity/last_step.hpp"
 #include "quantModeling/models/equity/rough_bergomi.hpp"
 #include "quantModeling/models/simulation_model.hpp"
@@ -13,6 +14,7 @@
 #include <cmath>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -130,12 +132,21 @@ namespace quantModeling
 
         /// See models/equity/bs_sim_model.hpp for why this exists.
         RoughBergomiSimModel(const RoughBergomiSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), xi0_(other.xi0_), eta_(other.eta_), rho_(other.rho_), H_(other.H_), n_steps_(other.n_steps_), xi_curve_(other.xi_curve_), steps_per_year_(other.steps_per_year_), event_step_(other.event_step_), xi_at_(other.xi_at_), timeline_(other.timeline_), defline_(other.defline_), dt_(other.dt_), alpha_(other.alpha_), l11_(other.l11_), l21_(other.l21_), l22_(other.l22_), dt_pow_alpha_(other.dt_pow_alpha_), sqrt_2alpha_plus_1_(other.sqrt_2alpha_plus_1_), b_pow_alpha_(other.b_pow_alpha_), compensator_(other.compensator_), sqrt_dt_(other.sqrt_dt_), half_dt_(other.half_dt_), sim_dim_(other.sim_dim_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), xi0_(other.xi0_), eta_(other.eta_), rho_(other.rho_), H_(other.H_), n_steps_(other.n_steps_), xi_curve_(other.xi_curve_), steps_per_year_(other.steps_per_year_), event_step_(other.event_step_), xi_at_(other.xi_at_), timeline_(other.timeline_), defline_(other.defline_), dt_(other.dt_), alpha_(other.alpha_), l11_(other.l11_), l21_(other.l21_), l22_(other.l22_), dt_pow_alpha_(other.dt_pow_alpha_), sqrt_2alpha_plus_1_(other.sqrt_2alpha_plus_1_), b_pow_alpha_(other.b_pow_alpha_), compensator_(other.compensator_), sqrt_dt_(other.sqrt_dt_), half_dt_(other.half_dt_), sim_dim_(other.sim_dim_), carry_(other.carry_)
         {
             set_param_pointers();
         }
 
         std::size_t n_underlyings() const override { return 1; }
+
+        /// The forward curve's carry over each grid step and its discounting
+        /// (WP 32 F2), r and q as parallel shifts over it (curve_carry.hpp).
+        bool set_forward_curve(const ForwardCurve &curve) override
+        {
+            carry_.emplace(curve);
+            set_param_pointers(); // the pillar shifts (WP 32 F3)
+            return true;
+        }
 
         void init(const TimeLine &product_timeline,
                   const std::vector<SampleDef> &defline) override
@@ -197,6 +208,11 @@ namespace quantModeling
                 compensator_[i] = std::pow(static_cast<Real>(i) * dt_, 2.0 * alpha_ + 1.0);
             sqrt_dt_ = std::sqrt(dt_);
             half_dt_ = 0.5 * dt_;
+            if (carry_)
+            {
+                carry_->set_uniform_steps(n_steps_, dt_);
+                carry_->set_events(timeline_, defline_);
+            }
 
             sim_dim_ = 3 * n_steps_;
         }
@@ -250,7 +266,10 @@ namespace quantModeling
                 const T dz_i = rho_ * dw1_i + rho_bar * (sqrt_dt_ * z2);
                 // v * (dt / 2): the same bits as 0.5 * v * dt (a halving is
                 // exact), one tape node instead of two.
-                S = S * exp(sqrt(v_prev) * dz_i - v_prev * half_dt_ + drift);
+                if (carry_) // the curve's carry over the step, ln F(t_i) / F(t_i-1)
+                    S = S * exp(sqrt(v_prev) * dz_i - v_prev * half_dt_ + (drift + carry_->step_log_carry(i - 1, dt_)));
+                else
+                    S = S * exp(sqrt(v_prev) * dz_i - v_prev * half_dt_ + drift);
 
                 const Real w_tilde_i = sqrt_2alpha_plus_1_ * (y_i + dt_pow_alpha_ * far[i]);
 
@@ -274,8 +293,7 @@ namespace quantModeling
         const std::vector<T *> &parameters() const override { return params_; }
         const std::vector<std::string> &parameter_labels() const override
         {
-            static const std::vector<std::string> labels{"spot", "rate", "div", "xi0", "eta", "rho"};
-            return labels;
+            return labels_;
         }
 
         Real H() const { return H_; }
@@ -329,7 +347,6 @@ namespace quantModeling
             const Time t = timeline_[e];
             Sample<T> &smp = path[e];
             smp.spots.assign(1, S);
-            smp.numeraire = exp(r_ * t);
             const SampleDef &def = defline_[e];
             // lastStep*() (WP 27 §8 rung 1): this model has no closed form
             // over its last step, so the slot is the payoff of the simulated
@@ -338,6 +355,12 @@ namespace quantModeling
             // digital reads lastStepDigital under every model).
             if (!def.monitors.empty())
                 mc::fill_last_step(def, smp, S, T(0.0));
+            if (carry_)
+            {
+                carry_->write_rates(def, e, t, S, r_, q_, smp);
+                return;
+            }
+            smp.numeraire = exp(r_ * t);
             smp.discounts.resize(def.discount_mats.size());
             for (std::size_t m = 0; m < def.discount_mats.size(); ++m)
                 smp.discounts[m] = exp(-r_ * (def.discount_mats[m] - t));
@@ -346,7 +369,13 @@ namespace quantModeling
                 smp.forwards[m] = S * exp((r_ - q_) * (def.forward_mats[m] - t));
         }
 
-        void set_param_pointers() { params_ = {&s0_, &r_, &q_, &xi0_, &eta_, &rho_}; }
+        void set_param_pointers()
+        {
+            params_ = {&s0_, &r_, &q_, &xi0_, &eta_, &rho_};
+            labels_ = {"spot", "rate", "div", "xi0", "eta", "rho"};
+            if (carry_)
+                carry_->append_parameters(params_, labels_);
+        }
 
         T s0_{}, r_{}, q_{}, xi0_{}, eta_{}, rho_{};
         Real H_;
@@ -366,8 +395,10 @@ namespace quantModeling
         std::vector<Real> compensator_;
         Real sqrt_dt_ = 0.0, half_dt_ = 0.0;
         std::size_t sim_dim_ = 0;
+        std::optional<ModelCurve<T>> carry_; ///< WP 32: r_, q_ are then shifts over it
 
         std::vector<T *> params_;
+        std::vector<std::string> labels_;
     };
 
 } // namespace quantModeling

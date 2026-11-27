@@ -1,3 +1,4 @@
+#include "quantModeling/engines/analytic/curve_closed_forms.hpp"
 #include "quantModeling/pricers/adapters/equity_asian.hpp"
 #include "quantModeling/pricers/adapters/equity_asian_lv.hpp"
 #include "quantModeling/pricers/adapters/equity_lookback.hpp"
@@ -90,9 +91,16 @@ namespace quantModeling
             if (terms.geometric_control)
                 route.control_mean = [terms, days, n, maturity](const scripting::ScriptModelSpec &m, int shift)
                 {
+                    const std::vector<double> t = times_of(script_builders::evenly(days + shift, n), maturity);
+                    // On a forward curve (WP 32 F6): the same closed form on
+                    // the curve's forwards at the fixings.
+                    if (m.forward_curve && !m.forward_curve->is_flat())
+                        return std::optional<double>(
+                            geometric_asian(*m.forward_curve, m.vol, terms.strike, terms.is_call, t, t.back()).price);
+                    const bool flat = m.forward_curve.has_value();
                     return std::optional<double>(script_builders::geometric_asian_bs(
-                        m.spot, m.rate, m.dividend, m.vol, terms.strike, terms.is_call,
-                        times_of(script_builders::evenly(days + shift, n), maturity)));
+                        m.spot, flat ? m.forward_curve->flat_rate() : m.rate,
+                        flat ? m.forward_curve->flat_dividend() : m.dividend, m.vol, terms.strike, terms.is_call, t));
                 };
             return route;
         }

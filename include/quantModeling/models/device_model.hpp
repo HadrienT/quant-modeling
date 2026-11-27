@@ -1,9 +1,11 @@
 #ifndef QM_MODELS_DEVICE_MODEL_HPP
 #define QM_MODELS_DEVICE_MODEL_HPP
 
+#include <optional>
 #include <vector>
 
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/market/forward_curve.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
 
 /**
@@ -74,6 +76,20 @@ namespace quantModeling
         /// Heston and SLV: how a price run steps the variance (#317). The
         /// risk kernels (duals, adjoints) always step it by Euler.
         mc::VarianceScheme variance_scheme = mc::VarianceScheme::Euler;
+
+        /// WP 32 F4: the forward curve the CPU model steps on; none: a flat
+        /// rate. `r` and `q` are then parallel shifts over it, and per step
+        /// of `t` its carry rate c_k (the CPU model's CurveCarry table): the
+        /// step's rate argument is c_k + r. The events' numeraires, discounts
+        /// and forwards are the curve's, computed on the host with the CPU
+        /// model's expressions. The risks per pillar: curve_pillars below.
+        std::optional<ForwardCurve> curve;
+        std::vector<Real> step_carry;
+        /// The curve's pillar shifts a risk run differentiates (WP 32): set
+        /// by the engine for the per-path adjoint, which then gives the
+        /// risks per pillar as the CPU's tape does; 0, the rate and the
+        /// dividend as parallel shifts only (the tangent, Vibrato).
+        int curve_pillars = 0;
 
         int factors = 1; ///< Brownian draws per drawing step
         int stride = 1;  ///< draws per drawing step (>= factors)

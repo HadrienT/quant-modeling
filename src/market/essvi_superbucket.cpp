@@ -394,8 +394,10 @@ namespace quantModeling
                                         const std::vector<Real> &ttms, const ESSVICalibrationSettings &settings,
                                         Real spot, Real rate, Real dividend, Real k_min, Real k_max,
                                         std::size_t n_strikes, std::size_t n_maturities,
-                                        const std::vector<Real> &dV_dsigma_loc, const DupireFromSVIParams &params)
+                                        const std::vector<Real> &dV_dsigma_loc, const DupireFromSVIParams &params,
+                                        const ForwardCurve *forwards)
     {
+        const ForwardCurve fwd = forwards ? *forwards : ForwardCurve::flat(spot, rate, dividend);
         if (quotes.size() != ttms.size())
             throw InvalidInput("essvi_superbucket: one quote list per maturity");
         if (dV_dsigma_loc.size() != n_strikes * n_maturities)
@@ -423,14 +425,15 @@ namespace quantModeling
         }
         const ESSVISurface surface(std::move(pillar_fits));
         const GridLocalVol grid =
-            build_local_vol_grid(surface, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities, params);
+            build_local_vol_grid(surface, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities, params, nullptr,
+                                 forwards);
         const std::vector<Real> &K = grid.K_grid();
         const std::vector<Real> &Tg = grid.T_grid();
         std::vector<Real> loc_var(n_strikes * n_maturities);
         for (std::size_t i = 0; i < n_strikes; ++i)
             for (std::size_t j = 0; j < n_maturities; ++j)
             {
-                const Real k = std::log(K[i] / (spot * std::exp((rate - dividend) * Tg[j])));
+                const Real k = std::log(K[i] / fwd.forward(Tg[j]));
                 loc_var[i * n_maturities + j] = svi_surface_local_variance(surface, k, Tg[j], params);
             }
         const std::vector<std::size_t> source = nearest_valid_sources(loc_var, n_strikes, n_maturities);
@@ -461,7 +464,7 @@ namespace quantModeling
                         lv[idx] = Number(v); // clamped: flat in the parameters
                         continue;
                     }
-                    const Real k = std::log(K[i] / (spot * std::exp((rate - dividend) * Tg[j])));
+                    const Real k = std::log(K[i] / fwd.forward(Tg[j]));
                     lv[idx] = local_variance_on_tape(surface, x, k, Tg[j]);
                 }
             Number L(0.0);
@@ -540,7 +543,8 @@ namespace quantModeling
                 v.slice = s;
                 v.ttm = ttms[s];
                 v.log_moneyness = quotes[s][i].log_moneyness;
-                v.strike = spot * std::exp((rate - dividend) * ttms[s] + v.log_moneyness);
+                v.strike = forwards ? forwards->forward(ttms[s]) * std::exp(v.log_moneyness)
+                                    : spot * std::exp((rate - dividend) * ttms[s] + v.log_moneyness);
                 v.implied_vol = quotes[s][i].market_iv;
                 v.vega = iv_bar[s][i];
                 out.quotes.push_back(v);

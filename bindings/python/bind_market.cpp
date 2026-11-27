@@ -16,6 +16,8 @@
 #include "quantModeling/engines/mc/simulation_engine_aad.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/curve_bootstrap.hpp"
+#include "quantModeling/market/forward_curve.hpp"
+#include "quantModeling/engines/analytic/curve_closed_forms.hpp"
 #include "quantModeling/market/vol_surface_pipeline.hpp"
 #include "quantModeling/market/rough_bergomi_calibration.hpp"
 #include "quantModeling/engines/xva/cross_currency_exposure_engine.hpp"
@@ -94,8 +96,10 @@ static py::dict calibrate_vol_surface_impl(
     quantModeling::Real k_min, quantModeling::Real k_max,
     std::size_t n_strikes, std::size_t n_maturities, std::size_t min_quotes_per_slice,
     const quantModeling::CleaningParams &cleaning_params, const std::string &surface_model,
-    double essvi_forward_smoothing, double essvi_min_forward_vol)
+    double essvi_forward_smoothing, double essvi_min_forward_vol, const std::vector<double> &forward_times,
+    const std::vector<double> &forwards, const std::vector<double> &forward_dfs)
 {
+    const auto curve = forward_curve_of(spot, rate, forward_times, forwards, forward_dfs);
     quantModeling::ESSVICalibrationSettings essvi;
     essvi.forward_smoothing = essvi_forward_smoothing;
     essvi.min_forward_vol = essvi_min_forward_vol;
@@ -104,7 +108,8 @@ static py::dict calibrate_vol_surface_impl(
     const auto result = quantModeling::calibrate_vol_surface(
         std::move(quotes), spot, rate, dividend, k_min, k_max, n_strikes, n_maturities,
         min_quotes_per_slice, cleaning_params, {}, {}, {},
-        surface_model == "essvi" ? quantModeling::SurfaceModel::ESSVI : quantModeling::SurfaceModel::SVI, essvi);
+        surface_model == "essvi" ? quantModeling::SurfaceModel::ESSVI : quantModeling::SurfaceModel::SVI, essvi,
+        curve ? &*curve : nullptr);
 
     py::list slices;
     for (const auto &s : result.slices)
@@ -231,7 +236,10 @@ static py::dict calibrate_slv_leverage_impl(double spot, double rate, double div
                                             const std::vector<double> &K_grid,
                                             const std::vector<double> &T_grid,
                                             const std::vector<double> &sigma_loc_flat,
-                                            std::size_t n_particles, int seed)
+                                            std::size_t n_particles, int seed,
+                                            const std::vector<double> &forward_times,
+                                            const std::vector<double> &forwards,
+                                            const std::vector<double> &forward_dfs)
 {
     using namespace quantModeling;
     const HestonParams h = heston_from_py(heston);
@@ -242,8 +250,9 @@ static py::dict calibrate_slv_leverage_impl(double spot, double rate, double div
     SLVLeverageGrid grid;
     {
         py::gil_scoped_release release;
+        const auto curve = forward_curve_of(spot, rate, forward_times, forwards, forward_dfs);
         grid = calibrate_slv_leverage(spot, rate, dividend, h, K_grid, T_grid,
-                                      sigma_loc_flat, settings);
+                                      sigma_loc_flat, settings, curve ? &*curve : nullptr);
     }
     py::dict out;
     out["K_grid"] = grid.K_grid;
@@ -265,9 +274,12 @@ static py::dict dupire_superbucket_impl(const py::list &slices_py, double spot, 
                                         std::size_t n_strikes, std::size_t n_maturities,
                                         const std::vector<double> &dV_dsigma_loc,
                                         const std::string &surface_model, double essvi_forward_smoothing,
-                                        double essvi_min_forward_vol)
+                                        double essvi_min_forward_vol, const std::vector<double> &forward_times,
+                                        const std::vector<double> &forwards,
+                                        const std::vector<double> &forward_dfs)
 {
     using namespace quantModeling;
+    const auto curve = forward_curve_of(spot, rate, forward_times, forwards, forward_dfs);
     if (surface_model != "svi" && surface_model != "essvi")
         throw std::invalid_argument("dupire_superbucket: surface_model is 'svi' or 'essvi'");
     std::vector<SVISliceCalibration> slices;
@@ -348,14 +360,14 @@ static py::dict dupire_superbucket_impl(const py::list &slices_py, double spot, 
             if (next != reported.size())
                 throw InvalidInput("dupire_superbucket: the slices are not the ones this eSSVI calibration keeps");
             r = essvi_superbucket(quotes, ttms, settings, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities,
-                                  dV_dsigma_loc);
+                                  dV_dsigma_loc, {}, curve ? &*curve : nullptr);
         }
     }
     else
     {
         py::gil_scoped_release release;
         r = dupire_superbucket(slices, quotes, spot, rate, dividend, k_min, k_max, n_strikes,
-                               n_maturities, dV_dsigma_loc);
+                               n_maturities, dV_dsigma_loc, {}, curve ? &*curve : nullptr);
     }
     py::list rows;
     for (const QuoteVega &v : r.quotes)
@@ -430,13 +442,95 @@ static py::dict distribution_to_py(const quantModeling::PathDistribution &r)
     return out;
 }
 
+namespace
+{
+    /// closed_form_on_curve (WP 32 F6): a library closed form on the
+    /// market's forward curve, with its risk per pillar.
+    py::dict closed_form_on_curve_impl(const std::string &product, double spot, double rate, double vol,
+                                       double strike, double maturity, bool is_call, double payout,
+                                       const std::vector<double> &forward_times, const std::vector<double> &forwards,
+                                       const std::vector<double> &forward_dfs, const std::vector<double> &fixings,
+                                       bool geometric)
+    {
+        using namespace quantModeling;
+        const auto curve = forward_curve_of(spot, rate, forward_times, forwards, forward_dfs);
+        if (!curve)
+            throw std::invalid_argument("closed_form_on_curve: forward_times are required");
+        const ForwardCurve &c = *curve;
+        CurveClosedForm v;
+        if (product == "vanilla")
+            v = black_scholes_vanilla(c, vol, strike, maturity, is_call);
+        else if (product == "digital")
+            v = black_scholes_digital(c, vol, strike, maturity, is_call, payout);
+        else if (product == "forward")
+            v = equity_forward(c, strike, maturity);
+        else if (product == "asian")
+            v = geometric ? geometric_asian(c, vol, strike, is_call, fixings, maturity)
+                          : arithmetic_asian_levy(c, vol, strike, is_call, fixings, maturity);
+        else
+            throw std::invalid_argument("closed_form_on_curve: product is vanilla, digital, forward or asian");
+        const auto [rho, dq] = curve_parallel_risks(v.sensitivity);
+        py::list pillars;
+        for (const PillarRisk &p : curve_pillar_risks(c, v.sensitivity))
+        {
+            py::dict d;
+            d["label"] = p.label;
+            d["value"] = p.value;
+            pillars.append(d);
+        }
+        py::dict out;
+        out["price"] = v.price;
+        out["forward"] = c.forward(maturity);
+        out["discount"] = c.discount(maturity);
+        out["rho"] = rho;
+        out["dividend_risk"] = dq;
+        out["pillars"] = pillars;
+        return out;
+    }
+} // namespace
+
 void register_market(py::module_ &m)
 {
+    // The equity forward curve (WP 32): what the models will read in place of
+    // a scalar rate and dividend yield. Times in years, rates integrated.
+    py::class_<quantModeling::ForwardCurve>(m, "ForwardCurve",
+                                            "Equity forward curve: spot, forwards F(t) and discount "
+                                            "factors DF(t) on pillars (blueprint/wp/32-forward-curve.md).")
+        .def(py::init(&quantModeling::ForwardCurve::from_pillars), py::arg("spot"), py::arg("times"),
+             py::arg("forwards"), py::arg("discount_factors"),
+             "Forwards and discount factors on the same pillars (the market's expiries); ln F and "
+             "ln DF linear in t between them, flat carry and forward rate outside.")
+        .def_static("flat", &quantModeling::ForwardCurve::flat, py::arg("spot"), py::arg("rate"),
+                    py::arg("dividend"), "The flat curve of a scalar rate and dividend yield.")
+        .def_property_readonly("spot", &quantModeling::ForwardCurve::spot)
+        .def_property_readonly("is_flat", &quantModeling::ForwardCurve::is_flat)
+        .def("forward", &quantModeling::ForwardCurve::forward, py::arg("t"), "F(t).")
+        .def("discount", &quantModeling::ForwardCurve::discount, py::arg("t"), "DF(t).")
+        .def("carry", &quantModeling::ForwardCurve::carry, py::arg("t1"), py::arg("t2"),
+             "ln F(t2) / F(t1).")
+        .def("rate", &quantModeling::ForwardCurve::rate, py::arg("t1"), py::arg("t2"),
+             "ln DF(t1) / DF(t2).")
+        .def("dividend", &quantModeling::ForwardCurve::dividend, py::arg("t1"), py::arg("t2"),
+             "rate(t1, t2) - carry(t1, t2): the integrated dividend yield, repo included.");
+
+    m.def("closed_form_on_curve", &closed_form_on_curve_impl, py::arg("product"), py::arg("spot"),
+          py::arg("rate"), py::arg("vol"), py::arg("strike"), py::arg("maturity"), py::arg("is_call") = true,
+          py::arg("payout") = 1.0, py::arg("forward_times") = std::vector<double>{},
+          py::arg("forwards") = std::vector<double>{}, py::arg("forward_dfs") = std::vector<double>{},
+          py::arg("fixings") = std::vector<double>{}, py::arg("geometric") = false,
+          "A Black-Scholes closed form on the market's forward curve (blueprint/wp/32-forward-curve.md F6): "
+          "product 'vanilla', 'digital' (payout), 'forward' (S(T) - strike) or 'asian' (fixings, geometric "
+          "exact, arithmetic by Levy's moment matching), paid at `maturity`. forward_times / forwards / "
+          "forward_dfs as price_script takes them (no forward_dfs: discounted at `rate`). Returns price, "
+          "forward and discount at maturity, rho and dividend_risk (parallel shifts) and pillars: "
+          "[{label, value}] per pillar, zero[t] and div_yield[t] as the Monte Carlo's, summing to them.");
+
     m.def("dupire_superbucket", &dupire_superbucket_impl, py::arg("slices"), py::arg("spot"),
           py::arg("rate"), py::arg("dividend"), py::arg("k_min"), py::arg("k_max"),
           py::arg("n_strikes"), py::arg("n_maturities"), py::arg("dV_dsigma_loc"),
           py::arg("surface_model") = "svi", py::arg("essvi_forward_smoothing") = 0.1,
-          py::arg("essvi_min_forward_vol") = 0.05,
+          py::arg("essvi_min_forward_vol") = 0.05, py::arg("forward_times") = std::vector<double>{},
+          py::arg("forwards") = std::vector<double>{}, py::arg("forward_dfs") = std::vector<double>{},
           "dV / d(each quoted implied vol) from dV/dsigma_loc (the local-vol AAD "
           "risks, K-major): through Dupire on an AAD tape, then through each SVI "
           "fit by the implicit function theorem (market/superbucket.hpp, lot 17h). "
@@ -454,7 +548,8 @@ void register_market(py::module_ &m)
     m.def("calibrate_slv_leverage", &calibrate_slv_leverage_impl, py::arg("spot"),
           py::arg("rate"), py::arg("dividend"), py::arg("heston"), py::arg("K_grid"),
           py::arg("T_grid"), py::arg("sigma_loc_flat"), py::arg("n_particles") = 50000,
-          py::arg("seed") = 1,
+          py::arg("seed") = 1, py::arg("forward_times") = std::vector<double>{},
+          py::arg("forwards") = std::vector<double>{}, py::arg("forward_dfs") = std::vector<double>{},
           "Leverage L(K, T) such that Heston dynamics times L reproduce the "
           "given Dupire grid's marginals (particle method, "
           "market/slv_calibration.hpp). Same K-major layout as sigma_loc_flat.");
@@ -471,9 +566,13 @@ void register_market(py::module_ &m)
           py::arg("min_quotes_per_slice") = 6,
           py::arg("cleaning_params") = quantModeling::CleaningParams{}, py::arg("surface_model") = "svi",
           py::arg("essvi_forward_smoothing") = 0.1, py::arg("essvi_min_forward_vol") = 0.05,
+          py::arg("forward_times") = std::vector<double>{}, py::arg("forwards") = std::vector<double>{},
+          py::arg("forward_dfs") = std::vector<double>{},
           "Clean raw option quotes, calibrate one SVI slice per maturity, and build the "
           "Dupire local-vol grid (K_grid/T_grid/sigma_loc_flat) that price_local_vol_mc consumes. "
-          "Raises RuntimeError (InvalidInput) if fewer than 2 maturities have enough clean quotes.");
+          "Raises RuntimeError (InvalidInput) if fewer than 2 maturities have enough clean quotes. "
+          "forward_times / forwards / forward_dfs: the market's forward curve (WP 32), at whose "
+          "forwards the grid's strikes are placed, K = F(T) e^k; empty: the flat spot e^{(rate - dividend) T}.");
 
     // ── LocalVolSurface sub-struct ─────────────────────────────────────────────────────────────
     m.def("calibrate_sabr_slice", &calibrate_sabr_slice_impl,

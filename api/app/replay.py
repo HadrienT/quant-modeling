@@ -94,7 +94,10 @@ def _drifted(
     before = {i["name"]: i for i in recorded}
     after = {i.name: i for i in current}
     drifted = []
-    for name in sorted(before.keys() | after.keys()):
+    # An input read on one side only is a change of code (a datum the pricer
+    # started or stopped reading, WP 32 F5's forward curve), which the code
+    # builds tell; a revision is the same input with another value.
+    for name in sorted(before.keys() & after.keys()):
         b, a = before.get(name), after.get(name)
         b_hash = b["value_hash"] if b else None
         a_hash = a.value_hash if a else None

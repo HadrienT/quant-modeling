@@ -163,7 +163,8 @@ namespace quantModeling
         const DupireFromSVIParams &dupire_params = {},
         const SurfaceSliceSelection &selection = {},
         SurfaceModel surface_model = SurfaceModel::SVI,
-        const ESSVICalibrationSettings &essvi = {});
+        const ESSVICalibrationSettings &essvi = {},
+        const ForwardCurve *forwards = nullptr);
 
 } // namespace quantModeling
 

@@ -83,7 +83,7 @@ namespace quantModeling
         const DupireFromSVIParams &dupire_params,
         const SurfaceSliceSelection &selection,
         SurfaceModel surface_model,
-        const ESSVICalibrationSettings &essvi)
+        const ESSVICalibrationSettings &essvi, const ForwardCurve *forwards)
     {
         RawVolSurface raw_surface(std::move(raw_quotes), spot, rate, dividend, cleaning_params);
 
@@ -199,7 +199,8 @@ namespace quantModeling
                 k_min = lo, k_max = hi;
             const ESSVISurface surface(std::move(pillars));
             GridLocalVol grid =
-                build_local_vol_grid(surface, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities, dupire_params);
+                build_local_vol_grid(surface, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities, dupire_params,
+                                     nullptr, forwards);
             VolSurfacePipelineResult result;
             result.cleaning_stats = raw_surface.stats();
             result.slices = std::move(reports);
@@ -244,7 +245,7 @@ namespace quantModeling
 
         SVISurface surface(std::move(kept));
         GridLocalVol grid = build_local_vol_grid(surface, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities,
-                                                 dupire_params, &sorted_bands);
+                                                 dupire_params, &sorted_bands, forwards);
 
         VolSurfacePipelineResult result;
         result.cleaning_stats = raw_surface.stats();

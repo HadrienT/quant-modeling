@@ -51,15 +51,20 @@ def _cleaning_summary(stats: dict) -> str:
 LEGACY_DEFAULT_RATE = 0.05
 
 
-def _calibrate(ticker: str, rate: Optional[float]) -> tuple:
+def _calibrate(
+    ticker: str, rate: Optional[float], horizon: Optional[float] = None
+) -> tuple:
     """The stored surface of `ticker` (market_snapshot: the database only,
     no live source; the option data QM_OPTION_DATA names). Returns (ticker,
-    spot, dividend, result) with result shaped as calibrate_vol_surface's."""
+    spot, dividend, result) with result shaped as calibrate_vol_surface's.
+    `horizon`: the years the flat carry is fitted at, the option's maturity
+    for a price (its paths then end on the curve's forward, where the grid
+    puts the smile, WP 32 F5); one year when omitted."""
     ticker = ticker.upper().strip()
     if rate is None and market_snapshot.option_data() == "legacy":
         rate = LEGACY_DEFAULT_RATE
     try:
-        m = market_snapshot.local_vol_market(ticker, rate, date.today())
+        m = market_snapshot.local_vol_market(ticker, rate, date.today(), horizon)
     except market_snapshot.MarketDataUnavailable as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except RuntimeError as exc:  # the native calibration refused the chain
@@ -102,7 +107,7 @@ def price_local_vol(
     calibrated from the ticker's option chain: clean -> SVI per maturity ->
     Dupire (Gatheral closed form) -> Euler-Maruyama Monte Carlo.
     """
-    ticker, spot, dividend, result = _calibrate(ticker, rate)
+    ticker, spot, dividend, result = _calibrate(ticker, rate, maturity)
 
     mc_input = qm.LocalVolInput()
     mc_input.spot = spot

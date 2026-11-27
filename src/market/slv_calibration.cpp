@@ -103,7 +103,7 @@ namespace quantModeling
         Real s0, Real r, Real q, const HestonParams &heston,
         const std::vector<Real> &K_grid, const std::vector<Real> &T_grid,
         const std::vector<Real> &sigma_loc,
-        const SLVCalibrationSettings &settings)
+        const SLVCalibrationSettings &settings, const ForwardCurve *forwards)
     {
         if (K_grid.size() < 2 || T_grid.size() < 2)
             throw InvalidInput("calibrate_slv_leverage: K_grid and T_grid need at least 2 points each");
@@ -172,6 +172,14 @@ namespace quantModeling
 
             for (std::size_t sub = 0; sub < n_sub; ++sub)
             {
+                // The substep's carry rate: the curve's over it, or r − q (a
+                // flat curve's own, the same bits as its scalars).
+                const Time t0 = t_prev + dt * static_cast<Real>(sub);
+                const Time t1 = sub + 1 == n_sub ? t_target : t_prev + dt * static_cast<Real>(sub + 1);
+                const Real mu = !forwards             ? r - q
+                                : forwards->is_flat() ? forwards->flat_rate() - forwards->flat_dividend()
+                                : dt > 0.0            ? forwards->carry(t0, t1) / dt
+                                                      : 0.0;
                 for (std::size_t p = 0; p < N; ++p)
                 {
                     const Real Lp = interp_1d(K_grid, prev_column, S[p]);
@@ -184,7 +192,7 @@ namespace quantModeling
                                         std::sqrt(1.0 - heston.rho * heston.rho) * z_indep;
 
                     const Real log_return =
-                        (r - q - 0.5 * Lp * Lp * v_plus) * dt + Lp * sqrt_v_plus * sqdt * z_spot;
+                        (mu - 0.5 * Lp * Lp * v_plus) * dt + Lp * sqrt_v_plus * sqdt * z_spot;
                     S[p] *= std::exp(log_return);
                     v[p] = v[p] + heston.kappa * (heston.theta - v_plus) * dt +
                            heston.xi * sqrt_v_plus * sqdt * dW_vol;

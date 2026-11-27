@@ -245,7 +245,9 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              const std::vector<double> &curve_factor_basis,
                              const std::vector<std::string> &curve_factor_labels,
                              bool past_rights_unexercised, const std::string &variance_scheme,
-                             bool knock_outs_as_thresholds, double time_limit)
+                             bool knock_outs_as_thresholds, double time_limit,
+                             const std::vector<double> &forward_times, const std::vector<double> &forwards,
+                             const std::vector<double> &forward_dfs)
 {
     using namespace quantModeling;
     // When the route gives up (issue #383): a multilevel run stops there.
@@ -287,6 +289,9 @@ static py::dict price_script(const std::string &script, double spot, double rate
     spec.spot = spot;
     spec.rate = rate;
     spec.dividend = dividend;
+    // The market's forward curve (WP 32 F5): the single-underlying equity
+    // models step on it, and rate and dividend are then not read.
+    spec.forward_curve = forward_curve_of(spot, rate, forward_times, forwards, forward_dfs);
     spec.vol = vol;
     spec.K_grid = K_grid;
     spec.T_grid = T_grid;
@@ -631,7 +636,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
             const std::optional<double> mean = product.black_scholes_control_mean(
                 multi ? spec.spots : std::vector<Real>{spec.spot}, spec.rate,
                 multi ? spec.dividends : std::vector<Real>{spec.dividend},
-                multi ? spec.vols : std::vector<Real>{spec.vol});
+                multi ? spec.vols : std::vector<Real>{spec.vol},
+                spec.forward_curve ? &*spec.forward_curve : nullptr);
             product.set_control_mean(mean);
             control_note = mean ? " | controlPays: its Black-Scholes expectation computed by the engine"
                                 : " | controlPays ignored: a cash flow with no closed form the engine knows "
@@ -819,6 +825,8 @@ void register_scripting(py::module_ &m)
           py::arg("curve_factor_labels") = std::vector<std::string>{},
           py::arg("past_rights_unexercised") = false, py::arg("variance_scheme") = "euler",
           py::arg("knock_outs_as_thresholds") = false, py::arg("time_limit") = 0.0,
+          py::arg("forward_times") = std::vector<double>{}, py::arg("forwards") = std::vector<double>{},
+          py::arg("forward_dfs") = std::vector<double>{},
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. terms_as_parameters: the script's numbers "
           "are a product's terms (a library product), read as data by the GPU's "
@@ -855,7 +863,11 @@ void register_scripting(py::module_ &m)
           "to the flat `rate` when they are empty; df() reads the simulated curve. Its "
           "AAD risks: rate_vol (sigma, a held) and one per curve factor -- the pillar zero "
           "rates move by curve_factor_basis (pillars x factors, row-major) per unit of "
-          "each factor named in curve_factor_labels; empty: one 'curve_parallel'.");
+          "each factor named in curve_factor_labels; empty: one 'curve_parallel'. "
+          "forward_times / forwards / forward_dfs: the market's forward curve (blueprint/wp/32-forward-curve.md): "
+          "black_scholes, local_vol, heston, slv and rough_bergomi on one underlying step on its carry and "
+          "discount on its DF(t) (forward_dfs empty: on the flat `rate`), and `rate` and `dividend` are then "
+          "not read; the AAD risks add zero[t] and div_yield[t] per pillar (t its time in years), summing to `rate` and `div`.");
     m.def(
         "recommend_script_model",
         [](const std::string &script, const std::string &valuation_date,

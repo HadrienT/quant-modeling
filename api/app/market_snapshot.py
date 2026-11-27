@@ -134,15 +134,17 @@ class LocalVolMarket:
     carry: Optional["chain_iv.MarketCarry"] = None
     #: chain_iv only: the accepted expiries the carry is read from.
     expiries: tuple = ()
+    #: chain_iv only: the market's forward curve on those expiries (WP 32
+    #: F5): the Dupire grid's strikes sit at its forwards, and the models on
+    #: one underlying step on it; `rate` and `dividend` stay the flat fit at
+    #: the horizon, for what still reads scalars (several underlyings,
+    #: Hull-White); a closed form reads the curve at its expiry (F6).
+    curve: Optional["chain_iv.MarketCurve"] = None
 
-    def carry_for(self, horizon: float, rate: Optional[float]):
-        """The market carry at another horizon (chain_iv), for a closed form
-        that needs no grid; None under legacy."""
-        if not self.expiries:
-            return None
-        return chain_iv.MarketCarry.at(
-            self.expiries, self.spot, max(horizon, 1.0 / 365.0), rate
-        )
+    def curve_kwargs(self) -> Dict[str, List[float]]:
+        """The module's forward_times / forwards / forward_dfs arguments:
+        empty under legacy."""
+        return self.curve.kwargs() if self.curve is not None else {}
 
     def surface_slices(self) -> List[Dict[str, float]]:
         """The SVI slices every mark reads: see surface_slices()."""
@@ -511,6 +513,8 @@ def _local_vol_market(
     spot_date, spot = spot_row
 
     carry = None
+    curve = None
+    typed_rate = rate
     if data == "chain_iv":
         expiries = read_store(db.options_chain_iv_expiries, ticker, snap)
         if not expiries:
@@ -526,6 +530,7 @@ def _local_vol_market(
         else:
             years = DEFAULT_HORIZON_YEARS
         carry = chain_iv.MarketCarry.at(expiries, spot, max(years, 1.0 / 365.0), rate)
+        curve = chain_iv.MarketCurve.of(expiries, spot, typed_rate)
         rate, dividend = carry.rate, carry.dividend
         div_row = None
     else:
@@ -580,6 +585,13 @@ def _local_vol_market(
             MarketInputStatus.OBSERVED,
             json.dumps([carry.horizon, carry.market_rate, carry.carry]),
         )
+        record_market_input(
+            f"forward_curve:{ticker}",
+            "db:options.chain_iv_expiries",
+            snap.isoformat(),
+            MarketInputStatus.OBSERVED,
+            json.dumps(curve.key()),
+        )
     # The chain's fingerprint is the registry's checksum when there is one:
     # a replay compares it with the registry, so a revised chain is detected
     # without reading its rows.
@@ -594,14 +606,15 @@ def _local_vol_market(
     # The calibration is a function of what was just read: cached on a
     # digest of it (the chain enters by its fingerprint, so a revised chain
     # is a new key, not a stale hit).
+    # On the market's curve the grid reads its forwards, not the flat fit at
+    # the product's horizon: one calibration serves every horizon.
     surface_key = hashlib.sha256(
         json.dumps(
             [
                 ticker,
                 snap.isoformat(),
                 spot,
-                rate,
-                dividend,
+                *([curve.key()] if curve is not None else [rate, dividend]),
                 chain.fingerprint,
                 data,
                 surface,
@@ -626,6 +639,7 @@ def _local_vol_market(
                 N_MATURITIES,
                 cleaning_params=cleaning,
                 **surface_kw,
+                **(curve.kwargs() if curve is not None else {}),
             ),
         )
 
@@ -636,12 +650,14 @@ def _local_vol_market(
                 "code": "market_carry",
                 "severity": "info",
                 "message": (
-                    f"Priced on the market's forward and discount at "
-                    f"{carry.horizon:.2f}y (options.chain_iv): carry "
-                    f"{carry.carry:.4%}, rate {carry.rate:.4%}, so a dividend "
-                    f"yield of {carry.dividend:.4%}. A vanilla expiring then "
-                    "reprices on the surface; a product with earlier dates sees "
-                    "the carry flat over its life."
+                    f"The market's forward curve (options.chain_iv, "
+                    f"{len(curve.times)} expiries to {curve.times[-1]:.2f}y): a "
+                    "simulation on one underlying reads every date's own forward "
+                    "and discount, and a closed form the curve's at its expiry. "
+                    f"Several underlyings and Hull-White take the flat carry at "
+                    f"{carry.horizon:.2f}y: "
+                    f"carry {carry.carry:.4%}, rate {carry.rate:.4%}, so a "
+                    f"dividend yield of {carry.dividend:.4%}."
                 ),
             }
         )
@@ -706,6 +722,7 @@ def _local_vol_market(
         cleaning_stats=dict(result.get("cleaning_stats", {})),
         carry=carry,
         expiries=tuple(expiries) if carry is not None else (),
+        curve=curve,
     )
 
 

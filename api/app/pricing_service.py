@@ -738,10 +738,6 @@ def _price_scripted_analytic(req: ScriptedProductRequest) -> PricingResponse:
         source = "typed"
     else:
         S, q, r = market.spot, market.dividend, req.rate
-        carry_for = getattr(market, "carry_for", None)
-        carry = carry_for(T, req.rate) if carry_for else None
-        if carry is not None:  # chain_iv: the carry at this product's expiry
-            r, q = carry.rate, carry.dividend
         with phase("calibration"):
             sigma = _atm_implied_vol(
                 SimpleNamespace(script=script, day_count=req.day_count),
@@ -755,14 +751,23 @@ def _price_scripted_analytic(req: ScriptedProductRequest) -> PricingResponse:
         )
     defaults = {p.name: p.default for p in product_templates.get(req.product).params}
     terms = {**defaults, **req.terms}
+    curve = None if typed else getattr(market, "curve", None)
+    pillars = None
     with phase("engine"):
+        if curve is not None:
+            # chain_iv (WP 32 F6): the closed form on the market's forward
+            # curve, the Monte Carlo's, at its expiry, and its rho and
+            # dividend risk per expiry.
+            r, q, pillars = _on_the_curve(
+                req.product, terms, S, req.rate, sigma, T, curve
+            )
         npv, greeks, what = _black_scholes(req.product, terms, S, r, q, sigma, T)
     diagnostics = (
         f"Analytic {what}, Black-Scholes at vol {sigma:.4f} ({source}; strike "
         f"{float(terms['strike']):.4g} x spot {S:.4f}, expiry T = {T:.4f} y)"
     )
     response = _pricing_response_from_dict(
-        {"npv": npv, "greeks": greeks, "diagnostics": diagnostics}
+        {"npv": npv, "greeks": greeks, "diagnostics": diagnostics, "risks": pillars}
     )
     return response.model_copy(
         update={
@@ -770,6 +775,38 @@ def _price_scripted_analytic(req: ScriptedProductRequest) -> PricingResponse:
             "warnings": [] if typed else list(market.warnings),
         }
     )
+
+
+def _on_the_curve(product, terms, S, rate, sigma, T, curve):
+    """The flat (rate, dividend) that reprice the market's forward curve at
+    T, as the C++ ForwardCurve interpolates it (the Monte Carlo's), and the
+    closed form's risks per pillar, exact, summing to its rho and dividend
+    risk (qm.closed_form_on_curve)."""
+    k = float(terms["strike"])
+    if product == "equity-forward":
+        kind, scale, payout = "forward", float(terms["notional"]), 1.0
+    elif product.startswith("european"):
+        kind, scale, payout = "vanilla", 1.0, 1.0
+    else:
+        kind, scale, payout = "digital", 1.0, float(terms["payout"])
+    v = qm.closed_form_on_curve(
+        kind,
+        S,
+        rate if rate is not None else 0.0,
+        sigma,
+        k * S,
+        T,
+        is_call=product.endswith("call"),
+        payout=payout,
+        **curve.kwargs(),
+    )
+    r = -math.log(v["discount"]) / T
+    q = r - math.log(v["forward"] / S) / T
+    pillars = [
+        {"label": p["label"], "value": scale * p["value"], "std_error": 0.0}
+        for p in v["pillars"]
+    ]
+    return r, q, pillars
 
 
 def _price_rates_on_the_curve(req: ScriptedProductRequest) -> PricingResponse:
@@ -1586,6 +1623,13 @@ def price_script(
                 historical_fixings=fixings,
                 variance_scheme=scheme,
                 knock_outs_as_thresholds=req.knock_outs_as_thresholds,
+                # The market's forward curve (WP 32 F5): every date of the
+                # script reads its own forward and discount.
+                **(
+                    market.curve_kwargs()
+                    if market is not None and model in CURVE_MODELS
+                    else {}
+                ),
                 **{**_multilevel(req, model), **over},
             )
 
@@ -1606,6 +1650,13 @@ def price_script(
             **({"script": script} if start_today else {}),
         }
     )
+
+
+#: The models that step on the market's forward curve (WP 32): the
+#: single-underlying equity ones. Hull-White keeps its own rates curve.
+CURVE_MODELS = frozenset(
+    ("black_scholes", "local_vol", "heston", "slv", "rough_bergomi")
+)
 
 
 def _market_quotes(req):

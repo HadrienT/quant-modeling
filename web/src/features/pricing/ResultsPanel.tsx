@@ -13,6 +13,7 @@ import {
 import { ErrorState, MetricRowSkeleton } from "@/shared/ui/states";
 import { McAccuracy } from "./McAccuracy";
 import { pricingBody } from "./requestBody";
+import { CurveRisks, PILLAR } from "./scripting/CurveRisks";
 import { ScriptGreeks } from "./scripting/ScriptGreeks";
 
 const GREEKS = ["delta", "gamma", "vega", "theta", "rho"] as const;
@@ -149,7 +150,7 @@ export function ResultsPanel({
 				)}
 			</div>
 
-			{(r.risks ?? []).length > 0 ? (
+			{(r.risks ?? []).some((x) => !PILLAR.test(x.label)) ? (
 				<ScriptGreeks
 					risks={r.risks ?? []}
 					names={underlyingNames(r, values)}
@@ -204,6 +205,10 @@ export function ResultsPanel({
 						)}
 					</table>
 				)
+			)}
+			{/* a closed form on the curve: its exact rho by expiry (WP 32 F6) */}
+			{(r.risks ?? []).every((x) => PILLAR.test(x.label)) && (
+				<CurveRisks pillars={r.risks ?? []} exact />
 			)}
 
 			{r.bond_analytics &&

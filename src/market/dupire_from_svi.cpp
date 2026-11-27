@@ -163,14 +163,15 @@ namespace quantModeling
 
     std::vector<bool> outside_column_bands(const std::vector<Real> &K_grid, const std::vector<Real> &T_grid,
                                            Real spot, Real rate, Real dividend,
-                                           const std::vector<QuotedBand> &column)
+                                           const std::vector<QuotedBand> &column, const ForwardCurve *forwards)
     {
+        const ForwardCurve fwd = forwards ? *forwards : ForwardCurve::flat(spot, rate, dividend);
         const std::size_t nK = K_grid.size(), nT = T_grid.size();
         std::vector<bool> out(nK * nT, false);
         for (std::size_t i = 0; i < nK; ++i)
             for (std::size_t j = 0; j < nT; ++j)
             {
-                const Real k = std::log(K_grid[i] / (spot * std::exp((rate - dividend) * T_grid[j])));
+                const Real k = std::log(K_grid[i] / fwd.forward(T_grid[j]));
                 out[i * nT + j] = k < column[j].lo || k > column[j].hi;
             }
         return out;
@@ -233,15 +234,19 @@ namespace quantModeling
     GridLocalVol build_t(const Surface &surface, Real spot, Real rate, Real dividend,
                          Real k_min, Real k_max,
                          std::size_t n_strikes, std::size_t n_maturities,
-                         const DupireFromSVIParams &params, const std::vector<QuotedBand> *slice_bands)
+                         const DupireFromSVIParams &params, const std::vector<QuotedBand> *slice_bands,
+                         const ForwardCurve *forwards)
     {
+        // The strikes' forwards: the curve's, or the flat one (the same bits
+        // as spot e^{(rate - dividend) T}).
+        const ForwardCurve fwd = forwards ? *forwards : ForwardCurve::flat(spot, rate, dividend);
         const std::vector<Real> T_grid = maturities_t(surface, n_maturities);
 
         // Strike grid: fixed log-moneyness band, converted to strikes at the
         // mid-maturity forward -- same convention as
         // api/app/local_vol/dupire.py's calibrate_dupire.
         const Real T_mid = 0.5 * (surface.ttm_min() + surface.ttm_max());
-        const Real F_mid = spot * std::exp((rate - dividend) * T_mid);
+        const Real F_mid = fwd.forward(T_mid);
         std::vector<Real> K_grid(n_strikes);
         for (std::size_t i = 0; i < n_strikes; ++i)
         {
@@ -252,14 +257,14 @@ namespace quantModeling
         std::vector<bool> outside;
         if (slice_bands != nullptr)
             outside = outside_column_bands(K_grid, T_grid, spot, rate, dividend,
-                                           column_bands_t(surface, *slice_bands, T_grid));
+                                           column_bands_t(surface, *slice_bands, T_grid), forwards);
         std::vector<Real> loc_var(n_strikes * n_maturities);
         for (std::size_t i = 0; i < n_strikes; ++i)
         {
             for (std::size_t j = 0; j < n_maturities; ++j)
             {
                 const Real T = T_grid[j];
-                const Real F_T = spot * std::exp((rate - dividend) * T);
+                const Real F_T = fwd.forward(T);
                 const Real k = std::log(K_grid[i] / F_T);
                 const std::size_t idx = i * n_maturities + j;
                 loc_var[idx] = !outside.empty() && outside[idx] ? std::numeric_limits<Real>::quiet_NaN()
@@ -296,9 +301,11 @@ namespace quantModeling
     }
     GridLocalVol build_local_vol_grid(const SVISurface &surface, Real spot, Real rate, Real dividend, Real k_min, Real k_max,
                                       std::size_t n_strikes, std::size_t n_maturities,
-                                      const DupireFromSVIParams &params, const std::vector<QuotedBand> *slice_bands)
+                                      const DupireFromSVIParams &params, const std::vector<QuotedBand> *slice_bands,
+                                      const ForwardCurve *forwards)
     {
-        return build_t(surface, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities, params, slice_bands);
+        return build_t(surface, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities, params, slice_bands,
+                       forwards);
     }
 
     Real svi_surface_local_variance(const ESSVISurface &surface, Real k, Real T, const DupireFromSVIParams &params) noexcept
@@ -316,9 +323,11 @@ namespace quantModeling
     }
     GridLocalVol build_local_vol_grid(const ESSVISurface &surface, Real spot, Real rate, Real dividend, Real k_min, Real k_max,
                                       std::size_t n_strikes, std::size_t n_maturities,
-                                      const DupireFromSVIParams &params, const std::vector<QuotedBand> *slice_bands)
+                                      const DupireFromSVIParams &params, const std::vector<QuotedBand> *slice_bands,
+                                      const ForwardCurve *forwards)
     {
-        return build_t(surface, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities, params, slice_bands);
+        return build_t(surface, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities, params, slice_bands,
+                       forwards);
     }
 
 } // namespace quantModeling

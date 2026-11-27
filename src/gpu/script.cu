@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "quantModeling/engines/mc/script_adjoint.hpp"
+#include "quantModeling/engines/mc/script_path_host.hpp"
 #include "quantModeling/engines/mc/sobol_bridge.hpp"
 #include "quantModeling/gpu/script.hpp"
 #include "quantModeling/scripting/cuda_codegen.hpp"
@@ -195,8 +196,17 @@ namespace quantModeling::gpu
             v.controls = req.controls;
 
             // The per-event tables (prices; the duals differentiate r and
-            // compute them on the path).
-            if (v.n_steps > 0 && p.n_events() > 0)
+            // compute them on the path). On a forward curve (WP 32 F4) the
+            // host's, with the CPU model's expressions, and each step's carry.
+            if (dm.curve && v.n_steps > 0 && p.n_events() > 0)
+            {
+                std::vector<Real> num, disc;
+                mc::curve_event_tables(dm, disc_begin, disc_mats, p.n_events(), num, disc);
+                v.event_numeraire = mem.put(num);
+                v.event_disc = disc.empty() ? nullptr : mem.put(disc);
+                v.step_carry = mem.put(dm.step_carry);
+            }
+            else if (v.n_steps > 0 && p.n_events() > 0)
             {
                 double *num = mem.alloc<double>(p.n_events());
                 double *disc = disc_mats.empty() ? nullptr : mem.alloc<double>(disc_mats.size());
@@ -572,9 +582,9 @@ namespace quantModeling::gpu
             // The conditioned coarse path's step row has one more column (the
             // fine sub-step's share, PathLayout::half): the same layout as
             // the kernel's (cuda_path_source), or the rows are misread.
-            const ir::PathLayout l = ir::path_layout(req.model->kind, req.model->n_assets, *req.ir, risk, false,
-                                                     !req.model->half_share.empty(),
-                                                     req.model->milstein_before_dates);
+            const ir::PathLayout l = ir::path_layout(
+                req.model->kind, req.model->n_assets, *req.ir, risk, false, !req.model->half_share.empty(),
+                req.model->milstein_before_dates, req.model->curve.has_value(), risk ? req.model->curve_pillars : 0);
             const ir::PathData data = ir::path_data(l, *req.model, *req.ir, req.discount_mats, req.baseline);
             detail::PathUnit u;
             u.draws = draws;
@@ -595,7 +605,9 @@ namespace quantModeling::gpu
             u.grid_nT = v.grid.nT;
             u.grid0 = l.th_grid;
             u.controls = req.controls;
-            if (risk || data.event_rows.empty() || v.n_steps == 0)
+            // On a forward curve (WP 32 F4) the host's rows: the curve's
+            // factors, as the CPU model computes them.
+            if (risk || data.event_rows.empty() || v.n_steps == 0 || req.model->curve)
                 u.event_rows = mem.put(data.event_rows); // times and maturities: the blocks take their exp
             else
             {
@@ -690,7 +702,7 @@ namespace quantModeling::gpu
             const scripting::CudaSource src = scripting::cuda_path_source(
                 *req.ir, static_cast<int>(req.model->kind), req.model->n_assets, kernel,
                 req.model->variance_scheme == mc::VarianceScheme::QE, !req.model->half_share.empty(),
-                req.model->milstein_before_dates);
+                req.model->milstein_before_dates, req.model->curve.has_value(), req.model->curve_pillars);
             if (src.source.empty())
                 return refuse(src.why);
             scripting::CudaKernelSpec spec;
@@ -872,6 +884,8 @@ namespace quantModeling::gpu
         const int dirs = mc::dual_directions(req.model->kind, req.model->n_assets);
         if (dirs <= 0)
             throw InvalidInput("GPU: forward-mode risks cover Black-Scholes and Heston");
+        if (req.model->curve_pillars > 0)
+            throw InvalidInput("GPU: the risks per pillar of the forward curve are the per-path adjoint's");
         // The tangent built from the IR (WP 27 lot L3): any number of
         // directions. The dual numbers on the interpreter, its oracle until
         // the tangent beat them, are gone (maintainer's decision 2026-11-16):
@@ -922,7 +936,8 @@ namespace quantModeling::gpu
                                ")");
         const scripting::ir::PathLayout layout =
             scripting::ir::path_layout(req.model->kind, req.model->n_assets, *req.ir, true, false,
-                                       !req.model->half_share.empty());
+                                       !req.model->half_share.empty(), false, req.model->curve.has_value(),
+                                       req.model->curve_pillars);
         // The risks: the model's scalar parameters, then its grid's points.
         const int n_params =
             layout.n_risks + (layout.th_grid >= 0 ? static_cast<int>(req.model->grid.size()) : 0);

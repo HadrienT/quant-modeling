@@ -7,6 +7,7 @@
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/instruments/simulatable.hpp"
+#include "quantModeling/market/forward_curve.hpp"
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/scripting/bytecode.hpp"
 #include "quantModeling/scripting/ir.hpp"
@@ -396,11 +397,19 @@ namespace quantModeling
          *
          * @param spots, dividends, vols one per asset (spot(i)); the rate is
          *        flat, and the numeraire exp(r t), as BlackScholesSimModel.
+         * @param curve the forward curve one asset steps on (WP 32 F6), or
+         *        null: its F(t) and DF(t) then replace the scalars' forward
+         *        and discount, the vol staying flat.
          */
         std::optional<double> black_scholes_control_mean(const std::vector<Real> &spots, Real rate,
                                                          const std::vector<Real> &dividends,
-                                                         const std::vector<Real> &vols) const
+                                                         const std::vector<Real> &vols,
+                                                         const ForwardCurve *curve = nullptr) const
         {
+            if (curve && curve->is_flat())
+                return black_scholes_control_mean(spots, curve->flat_rate(), {curve->flat_dividend()}, vols);
+            if (curve && spots.size() != 1)
+                return std::nullopt;
             if (control_index_ < 0)
                 return std::nullopt;
             using namespace scripting;
@@ -427,7 +436,10 @@ namespace quantModeling
                     return sp.index;
                 };
                 const auto fwd = [&](std::size_t a)
-                { return spots[a] * std::exp((rate - (a < dividends.size() ? dividends[a] : 0.0)) * t); };
+                {
+                    return curve ? curve->forward(t)
+                                 : spots[a] * std::exp((rate - (a < dividends.size() ? dividends[a] : 0.0)) * t);
+                };
                 if (const auto *sp = dynamic_cast<const NodeSpot *>(&n))
                 {
                     const auto a = asset_of(*sp);
@@ -506,7 +518,7 @@ namespace quantModeling
                     const auto v = forward_value(*top->arguments[1], t);
                     if (!v)
                         return std::nullopt;
-                    mean += std::exp(-rate * t) * *v;
+                    mean += (curve ? curve->discount(t) : std::exp(-rate * t)) * *v;
                     any = true;
                 }
             }

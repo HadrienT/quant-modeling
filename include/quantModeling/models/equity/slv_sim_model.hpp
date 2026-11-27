@@ -4,6 +4,7 @@
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/equity/curve_carry.hpp"
 #include "quantModeling/models/equity/knock_out.hpp"
 #include "quantModeling/models/equity/last_step.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -76,12 +78,21 @@ namespace quantModeling
 
         /// See models/equity/bs_sim_model.hpp for why this exists.
         SLVSimModel(const SLVSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), leverage_(other.leverage_), max_dt_(other.max_dt_), refinement_(other.refinement_), scheme_(other.scheme_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_), has_last_step_(other.has_last_step_), has_knock_out_(other.has_knock_out_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), leverage_(other.leverage_), max_dt_(other.max_dt_), refinement_(other.refinement_), scheme_(other.scheme_), carry_(other.carry_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_), has_last_step_(other.has_last_step_), has_knock_out_(other.has_knock_out_)
         {
             set_param_pointers();
         }
 
         std::size_t n_underlyings() const override { return 1; }
+
+        /// The forward curve's carry and discounting (WP 32 F2), r and q as
+        /// parallel shifts over it (curve_carry.hpp).
+        bool set_forward_curve(const ForwardCurve &curve) override
+        {
+            carry_.emplace(curve);
+            set_param_pointers(); // the pillar shifts (WP 32 F3)
+            return true;
+        }
 
         void init(const TimeLine &product_timeline,
                   const std::vector<SampleDef> &defline) override
@@ -96,6 +107,11 @@ namespace quantModeling
             defline_ = defline;
 
             event_index_of_step_ = event_index_of_step(sim_timeline_, timeline_);
+            if (carry_)
+            {
+                carry_->set_steps(sim_timeline_);
+                carry_->set_events(timeline_, defline_);
+            }
 
             // Every fine-grid step draws two correlated normals (spot,
             // variance) -- same shape as BatesSimModel without the two
@@ -144,6 +160,8 @@ namespace quantModeling
                 const double z_indep = gaussians[g++];
                 const std::ptrdiff_t event = event_index_of_step_[i];
                 const T S_before = S;
+                // The step's rate: r, or the curve's carry over it plus r.
+                const T rk = carry_ ? carry_->step_rate(i, r_) : r_;
                 T var(0.0);
                 if (has_last_step_ && event >= 0) // the step's log-variance L^2 v+ dt, as slv_step takes it
                 {
@@ -163,7 +181,7 @@ namespace quantModeling
                         {
                             double mean, sd;
                             const double L = mc::leverage_staircase(leverage_grid(), S, t);
-                            mc::qe_variance_step(heston(), L, r_, q_, v, dt, z_spot, mean, sd);
+                            mc::qe_variance_step(heston(), L, rk, q_, v, dt, z_spot, mean, sd);
                             double z = z_indep;
                             survival = mc::condition_on_survival(ko, log(S), mean, sd, z);
                             S = S * exp(mean + sd * z);
@@ -174,12 +192,12 @@ namespace quantModeling
                         const T Lp = mc::leverage_staircase(leverage_grid(), S, t);
                         const T v_plus = max(v, mc::variance_floor());
                         const T sqrt_v_plus = sqrt(v_plus);
-                        const T mean = (r_ - q_ - 0.5 * Lp * Lp * v_plus) * dt;
+                        const T mean = (rk - q_ - 0.5 * Lp * Lp * v_plus) * dt;
                         const T sd = Lp * sqrt_v_plus * std::sqrt(dt);
                         T z(z_spot);
                         survival = mc::condition_on_survival(ko, T(log(S)), mean, sd, z);
                         // slv_step on the conditioned draw: the IR's step
-                        mc::slv_step(leverage_grid(), heston(), r_, q_, S, v, t, dt, z, z_indep);
+                        mc::slv_step(leverage_grid(), heston(), rk, q_, S, v, t, dt, z, z_indep);
                         stepped = true;
                     }
                     mc::write_knock_out(defline_[static_cast<std::size_t>(event)],
@@ -188,26 +206,30 @@ namespace quantModeling
                 if constexpr (std::is_same_v<T, Real>)
                     if (!stepped && scheme_ == mc::VarianceScheme::QE) // z_spot drives the variance (#317)
                     {
-                        mc::slv_qe_step(leverage_grid(), heston(), r_, q_, S, v, t, dt, z_spot, z_indep);
+                        mc::slv_qe_step(leverage_grid(), heston(), rk, q_, S, v, t, dt, z_spot, z_indep);
                         stepped = true;
                     }
                 if (!stepped)
-                    mc::slv_step(leverage_grid(), heston(), r_, q_, S, v, t, dt, z_spot, z_indep);
+                    mc::slv_step(leverage_grid(), heston(), rk, q_, S, v, t, dt, z_spot, z_indep);
                 t_prev = t;
 
                 if (event < 0)
                     continue;
                 if (has_last_step_) // given v: lognormal, forward S e^{(r - q) dt}
                     mc::fill_last_step(defline_[static_cast<std::size_t>(event)], path[static_cast<std::size_t>(event)],
-                                       T(S_before * exp((r_ - q_) * dt)), var);
+                                       T(S_before * exp((rk - q_) * dt)), var);
 
                 Sample<T> &smp = path[static_cast<std::size_t>(event)];
                 smp.spots.assign(1, S);
-                smp.numeraire = exp(r_ * t);
-
                 const SampleDef &def = defline_[static_cast<std::size_t>(event)];
                 if (def.inst_vol) // the vol slv_step would apply from here: L(S_t, t) sqrt(v_t+)
                     smp.inst_vol = mc::leverage_staircase(leverage_grid(), S, t) * sqrt(max(v, mc::variance_floor()));
+                if (carry_)
+                {
+                    carry_->write_rates(def, static_cast<std::size_t>(event), t, S, r_, q_, smp);
+                    continue;
+                }
+                smp.numeraire = exp(r_ * t);
                 smp.discounts.resize(def.discount_mats.size());
                 for (std::size_t m = 0; m < def.discount_mats.size(); ++m)
                     smp.discounts[m] = exp(-r_ * (def.discount_mats[m] - t));
@@ -254,6 +276,12 @@ namespace quantModeling
                 d.event.clear();
                 for (const std::ptrdiff_t e : event_index_of_step_)
                     d.event.push_back(static_cast<int>(e));
+                // WP 32 F4: the curve, and each step's carry rate as this model's.
+                if (carry_)
+                {
+                    d.curve = carry_->tables().curve();
+                    d.step_carry = carry_->tables().step_rates();
+                }
                 return true;
             }
         }
@@ -265,6 +293,8 @@ namespace quantModeling
             if (asset != 0)
                 return false;
             mean = to_double(s0_) * std::exp(-to_double(q_) * t);
+            if (carry_)
+                mean *= carry_->deflated_spot_ratio(t);
             return true;
         }
 
@@ -313,6 +343,8 @@ namespace quantModeling
                     params_.push_back(&leverage_[i * nT + j]);
                     labels_.push_back("leverage[" + std::to_string(i) + "," + std::to_string(j) + "]");
                 }
+            if (carry_)
+                carry_->append_parameters(params_, labels_);
         }
 
         T s0_{}, r_{}, q_{}, v0_{}, kappa_{}, theta_{}, xi_{}, rho_{};
@@ -321,6 +353,7 @@ namespace quantModeling
         Time max_dt_;
         int refinement_ = 1;                                    // multilevel Monte Carlo: each max_dt step split in r
         mc::VarianceScheme scheme_ = mc::VarianceScheme::Euler; // price runs only (#317)
+        std::optional<ModelCurve<T>> carry_;                    ///< WP 32: r_, q_ are then shifts over it
 
         TimeLine timeline_;
         TimeLine sim_timeline_;

@@ -107,6 +107,7 @@ def market_vega(req: ScriptedProductRequest) -> MarketVegaResponse:
             sampler=req.sampler,
             # A library product: its numbers are terms (one GPU kernel for all).
             terms_as_parameters=True,
+            **m.curve_kwargs(),  # the market's forward curve (WP 32 F5)
         )
         bucket = qm.dupire_superbucket(
             m.svi_slices,
@@ -121,6 +122,7 @@ def market_vega(req: ScriptedProductRequest) -> MarketVegaResponse:
             surface_model=m.surface_model,
             essvi_forward_smoothing=m.essvi_forward_smoothing,
             essvi_min_forward_vol=m.essvi_min_forward_vol,
+            **m.curve_kwargs(),  # the grid's strikes at the curve's forwards
         )
         return priced["npv"], bucket["quotes"], priced.get("device", "cpu")
 

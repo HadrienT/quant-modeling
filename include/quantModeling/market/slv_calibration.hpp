@@ -2,6 +2,7 @@
 #define MARKET_SLV_CALIBRATION_HPP
 
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/market/forward_curve.hpp"
 #include "quantModeling/models/equity/heston.hpp"
 
 #include <cstddef>
@@ -102,7 +103,10 @@ namespace quantModeling
         Real s0, Real r, Real q, const HestonParams &heston,
         const std::vector<Real> &K_grid, const std::vector<Real> &T_grid,
         const std::vector<Real> &sigma_loc,
-        const SLVCalibrationSettings &settings = {});
+        const SLVCalibrationSettings &settings = {},
+        /// The particles' carry over each substep, ln F(t1)/F(t0) (WP 32
+        /// F5), as SLVSimModel steps on it; null: the flat r − q.
+        const ForwardCurve *forwards = nullptr);
 
 } // namespace quantModeling
 

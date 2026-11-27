@@ -363,6 +363,40 @@ specialised Heston kernel moved in the last bit. Details and measurements:
 The AAD of Part II does not use the compiled path yet; how to make the GPU
 AAD fast is an open question of WP 26.
 
+**A model on a forward curve (WP 32 F4, 2026-11-27).** The path program
+reads the market's carry and discounting as data, not as parameters. The
+step row gains a column, the curve's carry rate over the step c_k (the CPU
+model's `CurveCarry` table), which the step adds to the rate theta: the
+drift is (c_k + r - q - sigma^2/2) dt, the CPU model's T(c_k) + r, and r and
+q are parallel shifts at zero. A price's date rows hold the curve's factors
+times the shift's (1/DF(t) e^{rt}, DF(T)/DF(t) e^{-r(T-t)}, F(T)/F(t)
+e^{(r-q)(T-t)}), computed on the host with the CPU's expressions; a risk
+program's rows keep its times and maturities and add the curve's factors in
+a second block of columns (`PathLayout::factor_col0`), which `Num`, `Df` and
+`Fwd` multiply in, so the tangent and the adjoint differentiate r and q as
+before. F4 left the pillars' risks (WP 32 F3) to the CPU's tape.
+
+**The pillars on the GPU (WP 32, 2026-11-27).** A step's rate and a date's
+factors each read two to eight of the curve's pillar shifts, with
+coefficients `CurveCarry` tabulates (sparse, `Term{index, coef}`). The
+adjoint program makes the shifts thetas: `PathLayout::th_pillar0` .. +
+`n_pillars`, after the model's scalars and before the grid, so they are
+"local" parameters, accumulated per thread in `lth` and closing the path's
+trail as the scalars do. The rows carry `kPillarTerms` = 8 (slot, coef) pairs
+per step and per date factor; the step adds `CurveShift(slot, coef)` for each
+to its rate, a date factor to the argument of its exp. `CurveShift` is zero
+(the shifts' value), so the primal's bits do not move; its adjoint is the
+statement `CurveAccum`, `lth[th_pillar0 + slot] += coef * adjoint`, a
+dynamic index into the thread's local array -- the indirection the IR's
+static `Theta` cannot express, and the reason for a new op rather than a
+dense column per pillar (a 50-expiry curve is 100 shifts: a dense row would
+cost 100 multiply-adds a step). The tangent keeps its directions: a pillar
+direction would be a pass per pillar, so on a curve every model takes the
+adjoint (Heston and Black-Scholes included). Cost, one V100, 65 536 paths,
+daily steps, 100 pillars: local vol 20.3 -> 21.7 ms, SLV 11.0 -> 14.3 ms,
+Heston 4.7 ms (tangent) -> 7.1 ms. The CPU tape stays the oracle: every
+pillar within 1e-10 of the largest risk.
+
 ---
 
 # Partie II — L'AAD sur GPU

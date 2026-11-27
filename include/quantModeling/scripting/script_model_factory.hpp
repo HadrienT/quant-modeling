@@ -2,6 +2,7 @@
 #define QM_SCRIPTING_SCRIPT_MODEL_FACTORY_HPP
 
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/market/forward_curve.hpp"
 #include "quantModeling/models/equity/rough_bergomi_sim_model.hpp"
 #include "quantModeling/models/hybrid/hull_white_equity_sim_model.hpp"
 #include "quantModeling/models/equity/bates_sim_model.hpp"
@@ -21,6 +22,7 @@
 
 #include <cmath>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -38,6 +40,12 @@ namespace quantModeling::scripting
         double spot = 0.0;
         double rate = 0.0;
         double dividend = 0.0;
+        /// The market's forwards and discount factors (WP 32): every
+        /// single-underlying equity model steps on its carry and discounts
+        /// on its DF(t), and rate and dividend above are then not read. It
+        /// contributes ratios F(t)/F(s), so the model's spot stays `spot`.
+        /// A flat curve prices as its (rate, dividend) do, bit for bit.
+        std::optional<ForwardCurve> forward_curve;
         double vol = 0.0; ///< black_scholes
         /// black_scholes on several underlyings (spot(0), spot(1), ...): one
         /// spot, dividend yield and flat vol per asset, and their correlation
@@ -155,6 +163,35 @@ namespace quantModeling::scripting
         };
         const HestonParams &h = s.heston;
 
+        // The forward curve (WP 32 F2): a flat one is its scalars, today's
+        // path; another one makes rate and dividend the model's parallel
+        // shifts over it, zero.
+        double rate = s.rate, dividend = s.dividend;
+        const ForwardCurve *fwd_curve = nullptr;
+        if (s.forward_curve)
+        {
+            if (s.spots.size() > 1 || s.model == "hull_white" || s.model == "short_rate")
+                throw InvalidInput("price_script: a forward curve is read by the single-underlying equity models "
+                                   "(black_scholes, local_vol, heston, slv, rough_bergomi), not by '" +
+                                   s.model + (s.spots.size() > 1 ? "' on several underlyings" : "'"));
+            if (s.forward_curve->is_flat())
+            {
+                rate = s.forward_curve->flat_rate();
+                dividend = s.forward_curve->flat_dividend();
+            }
+            else
+            {
+                rate = dividend = 0.0;
+                fwd_curve = &*s.forward_curve;
+            }
+        }
+        auto on_curve = [&](auto m) -> std::unique_ptr<ISimulationModel<T>>
+        {
+            if (fwd_curve && !m->set_forward_curve(*fwd_curve))
+                throw InvalidInput("price_script: model '" + s.model + "' cannot step on a forward curve");
+            return m;
+        };
+
         if (s.model == "black_scholes" && s.spots.size() > 1)
         {
             const std::size_t n = s.spots.size();
@@ -184,24 +221,23 @@ namespace quantModeling::scripting
         {
             if (!(s.vol > 0.0))
                 throw InvalidInput("price_script: black_scholes needs vol > 0");
-            return std::make_unique<BlackScholesSimModel<T>>(
-                T(s.spot), T(s.rate), T(s.dividend), T(s.vol));
+            return on_curve(std::make_unique<BlackScholesSimModel<T>>(T(s.spot), T(rate), T(dividend), T(s.vol)));
         }
         if (s.model == "local_vol")
         {
-            auto m = std::make_unique<LocalVolSimModel<T>>(T(s.spot), T(s.rate), T(s.dividend), s.K_grid, s.T_grid,
+            auto m = std::make_unique<LocalVolSimModel<T>>(T(s.spot), T(rate), T(dividend), s.K_grid, s.T_grid,
                                                            to_T(s.sigma_loc_flat), s.max_dt);
             m->set_milstein(s.milstein);
             m->set_milstein_before_dates(s.milstein_before_dates);
-            return m;
+            return on_curve(std::move(m));
         }
         if (s.model == "heston")
         {
-            auto m = std::make_unique<BatesSimModel<T>>(T(s.spot), T(s.rate), T(s.dividend), T(h.v0), T(h.kappa),
+            auto m = std::make_unique<BatesSimModel<T>>(T(s.spot), T(rate), T(dividend), T(h.v0), T(h.kappa),
                                                         T(h.theta), T(h.xi), T(h.rho), T(0.0), T(0.0), T(0.0),
                                                         s.max_dt);
             m->set_variance_scheme(s.variance_scheme);
-            return m;
+            return on_curve(std::move(m));
         }
         if (s.model == "rough_bergomi")
         {
@@ -209,9 +245,9 @@ namespace quantModeling::scripting
                 throw InvalidInput("price_script: rough_bergomi needs a forward variance curve (xi_times, xi_values)");
             // The hybrid scheme's uniform grid: at least daily, whatever max_dt.
             const int spy = std::max(365, static_cast<int>(std::lround(1.0 / s.max_dt)));
-            return std::make_unique<RoughBergomiSimModel<T>>(T(s.spot), T(s.rate), T(s.dividend),
-                                                             ForwardVarianceCurve{s.xi_times, s.xi_values},
-                                                             T(s.rb_eta), T(s.rb_rho), s.rb_H, spy);
+            return on_curve(std::make_unique<RoughBergomiSimModel<T>>(T(s.spot), T(rate), T(dividend),
+                                                                      ForwardVarianceCurve{s.xi_times, s.xi_values},
+                                                                      T(s.rb_eta), T(s.rb_rho), s.rb_H, spy));
         }
         if (s.model == "hull_white")
         {
@@ -246,11 +282,11 @@ namespace quantModeling::scripting
         }
         if (s.model == "slv")
         {
-            auto m = std::make_unique<SLVSimModel<T>>(T(s.spot), T(s.rate), T(s.dividend), T(h.v0), T(h.kappa),
+            auto m = std::make_unique<SLVSimModel<T>>(T(s.spot), T(rate), T(dividend), T(h.v0), T(h.kappa),
                                                       T(h.theta), T(h.xi), T(h.rho), s.K_grid, s.T_grid,
                                                       to_T(s.leverage_flat), s.max_dt);
             m->set_variance_scheme(s.variance_scheme);
-            return m;
+            return on_curve(std::move(m));
         }
         throw std::invalid_argument(
             "price_script: unknown model '" + s.model +

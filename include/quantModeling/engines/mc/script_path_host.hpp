@@ -1,6 +1,8 @@
 #ifndef QM_ENGINES_MC_SCRIPT_PATH_HOST_HPP
 #define QM_ENGINES_MC_SCRIPT_PATH_HOST_HPP
 
+#include <cmath>
+#include <cstddef>
 #include <vector>
 
 #include "quantModeling/engines/mc/script_path.hpp"
@@ -18,10 +20,41 @@
 namespace quantModeling::mc
 {
 
+    /**
+     * The event tables of a model on a forward curve (WP 32 F4), on the
+     * host: per event, its numeraire e^{r t} / DF(t) and, per df() slot
+     * disc_mats[disc_begin[e] .. disc_begin[e + 1]), DF(T) / DF(t) e^{-r (T -
+     * t)} -- the CPU model's expressions (ModelCurve::write_rates), so the
+     * device's paths read the CPU's bits. t is the step's time of the event.
+     */
+    inline void curve_event_tables(const DeviceModel &dm, const std::vector<int> &disc_begin,
+                                   const std::vector<Time> &disc_mats, std::size_t n_events,
+                                   std::vector<Real> &numeraire, std::vector<Real> &disc)
+    {
+        const ForwardCurve &c = *dm.curve;
+        numeraire.assign(n_events, 0.0);
+        disc.assign(disc_mats.size(), 0.0);
+        for (std::size_t s = 0; s < dm.t.size(); ++s)
+        {
+            const int e = dm.event[s];
+            if (e < 0 || static_cast<std::size_t>(e) >= n_events)
+                continue;
+            const Time ts = dm.t[s];
+            const Real df_t = c.discount(ts);
+            for (int i = disc_begin[static_cast<std::size_t>(e)]; i < disc_begin[static_cast<std::size_t>(e) + 1]; ++i)
+            {
+                const Time m = disc_mats[static_cast<std::size_t>(i)];
+                disc[static_cast<std::size_t>(i)] = (c.discount(m) / df_t) * std::exp(-dm.r * (m - ts));
+            }
+            numeraire[static_cast<std::size_t>(e)] = (1.0 / df_t) * std::exp(dm.r * ts);
+        }
+    }
+
     struct ScriptPathHost
     {
         std::vector<int> disc_begin{0};
         std::vector<Time> disc_mats;
+        std::vector<Real> curve_numeraire, curve_disc; ///< a model on a forward curve's event tables
         ScriptPathView view;
 
         ScriptPathHost(const scripting::Program &p, const DeviceModel &dm,
@@ -59,6 +92,13 @@ namespace quantModeling::mc
             view.variance_scheme = dm.variance_scheme;
             view.disc_begin = disc_begin.data();
             view.disc_mats = disc_mats.empty() ? nullptr : disc_mats.data();
+            if (dm.curve) // WP 32 F4: the curve's carry per step and its event tables
+            {
+                curve_event_tables(dm, disc_begin, disc_mats, p.n_events(), curve_numeraire, curve_disc);
+                view.step_carry = dm.step_carry.empty() ? nullptr : dm.step_carry.data();
+                view.event_numeraire = curve_numeraire.data();
+                view.event_disc = curve_disc.empty() ? nullptr : curve_disc.data();
+            }
         }
 
         ScriptPathHost(const ScriptPathHost &) = delete; // view points into *this

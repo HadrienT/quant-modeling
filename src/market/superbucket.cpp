@@ -85,8 +85,9 @@ namespace quantModeling
         const std::vector<std::vector<SVISliceQuote>> &quotes_in,
         Real spot, Real rate, Real dividend, Real k_min, Real k_max,
         std::size_t n_strikes, std::size_t n_maturities,
-        const std::vector<Real> &dV_dsigma_loc, const DupireFromSVIParams &params)
+        const std::vector<Real> &dV_dsigma_loc, const DupireFromSVIParams &params, const ForwardCurve *forwards)
     {
+        const ForwardCurve fwd = forwards ? *forwards : ForwardCurve::flat(spot, rate, dividend);
         if (slices_in.size() != quotes_in.size())
             throw InvalidInput("dupire_superbucket: one quote list per slice");
         if (dV_dsigma_loc.size() != n_strikes * n_maturities)
@@ -116,17 +117,17 @@ namespace quantModeling
         for (std::size_t s = 0; s < n_slices; ++s)
             bands.push_back(quoted_band(quotes[s], k_min, k_max));
         const GridLocalVol grid = build_local_vol_grid(surface, spot, rate, dividend, k_min, k_max,
-                                                       n_strikes, n_maturities, params, &bands);
+                                                       n_strikes, n_maturities, params, &bands, forwards);
         const std::vector<Real> &K = grid.K_grid();
         const std::vector<Real> &Tg = grid.T_grid();
         const std::vector<bool> outside =
-            outside_column_bands(K, Tg, spot, rate, dividend, local_vol_column_bands(surface, bands, Tg));
+            outside_column_bands(K, Tg, spot, rate, dividend, local_vol_column_bands(surface, bands, Tg), forwards);
         std::vector<Real> loc_var(n_strikes * n_maturities);
         for (std::size_t i = 0; i < n_strikes; ++i)
             for (std::size_t j = 0; j < n_maturities; ++j)
             {
                 const std::size_t idx = i * n_maturities + j;
-                const Real k = std::log(K[i] / (spot * std::exp((rate - dividend) * Tg[j])));
+                const Real k = std::log(K[i] / fwd.forward(Tg[j]));
                 loc_var[idx] = outside[idx] ? std::numeric_limits<Real>::quiet_NaN()
                                             : svi_surface_local_variance(surface, k, Tg[j], params);
             }
@@ -164,7 +165,7 @@ namespace quantModeling
                     const SVISurface::Bracket br = surface.bracket(Tg[j]);
                     const Real lam = br.lambda;
                     const bool from_zero = br.lower == SVISurface::kZeroSlice;
-                    const Real k = std::log(K[i] / (spot * std::exp((rate - dividend) * Tg[j])));
+                    const Real k = std::log(K[i] / fwd.forward(Tg[j]));
 
                     const SviNum &up = theta[br.upper];
                     const Number w1 = w_of(k, up);
@@ -251,7 +252,8 @@ namespace quantModeling
                 v.slice = s;
                 v.ttm = ttm;
                 v.log_moneyness = q[i].log_moneyness;
-                v.strike = spot * std::exp((rate - dividend) * ttm + q[i].log_moneyness);
+                v.strike = forwards ? forwards->forward(ttm) * std::exp(q[i].log_moneyness)
+                                    : spot * std::exp((rate - dividend) * ttm + q[i].log_moneyness);
                 v.implied_vol = q[i].market_iv;
                 v.vega = q[i].weight * J.row(static_cast<Eigen::Index>(i)).dot(x);
                 out.quotes.push_back(v);

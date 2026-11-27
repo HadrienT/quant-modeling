@@ -2,6 +2,7 @@
 #define MARKET_DUPIRE_FROM_SVI_HPP
 
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/market/forward_curve.hpp"
 #include "quantModeling/market/svi_calibration.hpp"
 #include "quantModeling/market/essvi.hpp"
 #include "quantModeling/market/svi_surface.hpp"
@@ -102,7 +103,8 @@ namespace quantModeling
     /// The cells (K-major) outside their column's band.
     std::vector<bool> outside_column_bands(const std::vector<Real> &K_grid, const std::vector<Real> &T_grid,
                                            Real spot, Real rate, Real dividend,
-                                           const std::vector<QuotedBand> &column);
+                                           const std::vector<QuotedBand> &column,
+                                           const ForwardCurve *forwards = nullptr);
 
     /**
      * The fill of a banded grid: a cell outside its band, or where Dupire is
@@ -129,13 +131,15 @@ namespace quantModeling
                                       Real k_min, Real k_max,
                                       std::size_t n_strikes = 100, std::size_t n_maturities = 50,
                                       const DupireFromSVIParams &params = {},
-                                      const std::vector<QuotedBand> *slice_bands = nullptr);
+                                      const std::vector<QuotedBand> *slice_bands = nullptr,
+                                      const ForwardCurve *forwards = nullptr);
     /// The same grid from the eSSVI surface (#381).
     GridLocalVol build_local_vol_grid(const ESSVISurface &surface, Real spot, Real rate, Real dividend,
                                       Real k_min, Real k_max,
                                       std::size_t n_strikes = 100, std::size_t n_maturities = 50,
                                       const DupireFromSVIParams &params = {},
-                                      const std::vector<QuotedBand> *slice_bands = nullptr);
+                                      const std::vector<QuotedBand> *slice_bands = nullptr,
+                                      const ForwardCurve *forwards = nullptr);
 
     /// No valid cell anywhere on the grid to copy from.
     inline constexpr std::size_t kNoSource = static_cast<std::size_t>(-1);
