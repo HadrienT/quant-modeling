@@ -182,13 +182,11 @@ namespace quantModeling
                                                                       << cpu.diagnostics;
     }
 
-    // The risks on a curve: the kernels compiled from the IR (the tangent
-    // under Black-Scholes and Heston, the per-path adjoint under local vol
-    // and SLV) against the CPU's tape on the same Philox paths, within the
-    // project's tolerance (WP 26: 1e-10 of the largest risk). The tape adds
-    // one risk per pillar, which sum to the rate and the dividend the
-    // kernels take as parallel shifts; the GPU's labels are the tape's less
-    // the pillars, and it says so.
+    // The risks on a curve: the per-path adjoint compiled from the IR, under
+    // every model (WP 32), against the CPU's tape on the same Philox paths,
+    // within the project's tolerance (WP 26: 1e-10 of the largest risk) --
+    // every pillar's among them, the GPU's labels the tape's. The pillars
+    // sum to the rate and the dividend.
     TEST_F(GpuForwardCurveTest, RisksOnTheCurveAreTheTapes)
     {
         constexpr std::size_t kPaths = 4096; // a multiple of simulate_aad's batch of 64
@@ -200,7 +198,8 @@ namespace quantModeling
             std::string why;
             const auto gpu = simulate_script_aad_gpu(product, *model, kPaths, kSeed, why);
             ASSERT_TRUE(gpu.has_value()) << m << ": " << why;
-            EXPECT_NE(gpu->diagnostics.find("forward curve"), std::string::npos) << gpu->diagnostics;
+            EXPECT_NE(gpu->diagnostics.find("per-path adjoint"), std::string::npos) << gpu->diagnostics;
+            EXPECT_EQ(gpu->diagnostics.find("run on the CPU's tape"), std::string::npos) << gpu->diagnostics;
 
             const ScriptedProduct<aad::Number> tape_product(kWithForward, kCtx);
             auto tape_model = make_script_model<aad::Number>(spec(m));
@@ -217,7 +216,12 @@ namespace quantModeling
                 if (cpu.risk_labels[i].rfind("div_yield[", 0) == 0)
                     yield_sum += cpu.risks[i];
             }
-            ASSERT_LT(gpu->risk_labels.size(), cpu.risk_labels.size()) << m;
+            ASSERT_EQ(gpu->risk_labels.size(), cpu.risk_labels.size()) << m;
+            int pillars_read = 0;
+            for (std::size_t i = 0; i < gpu->risk_labels.size(); ++i)
+                pillars_read += cpu.risk_labels[i].find('[') != std::string::npos && cpu.risks[i] != 0.0 &&
+                                cpu.risk_labels[i].rfind("lvol", 0) != 0 && cpu.risk_labels[i].rfind("leverage", 0) != 0;
+            EXPECT_GE(pillars_read, 4) << m; // the test reads several pillars, not the parallel shift alone
             for (std::size_t i = 0; i < gpu->risk_labels.size(); ++i)
             {
                 ASSERT_EQ(gpu->risk_labels[i], cpu.risk_labels[i]) << m;
@@ -231,6 +235,46 @@ namespace quantModeling
             EXPECT_NEAR(at("rate"), zero_sum, 1e-9 * largest) << m;
             EXPECT_NEAR(at("div"), yield_sum, 1e-9 * largest) << m;
         }
+    }
+
+    // Multilevel's risks on a curve (WP 32): every level's adjoint carries
+    // the pillars, so the run reports each label of the tape; the pillars sum
+    // to the rate and the dividend, and agree with the tape within the errors.
+    TEST_F(GpuForwardCurveTest, MultilevelRisksPerPillar)
+    {
+        const ScriptedProduct<Real> product(kScript, kCtx);
+        auto m = make_script_model<Real>(spec("local_vol"));
+        std::string why;
+        const auto ml = simulate_script_aad_mlqmc_gpu(product, *m, 0.005, 0.0, 41, why);
+        ASSERT_TRUE(ml.has_value()) << why;
+
+        const ScriptedProduct<aad::Number> tape_product(kScript, kCtx);
+        auto tape_model = make_script_model<aad::Number>(spec("local_vol"));
+        const AADSimulResults cpu =
+            simulate_aad(tape_product, *tape_model, 65536, 7, first_aad_payoff, RngKind::Philox);
+        ASSERT_EQ(ml->risk_labels, cpu.risk_labels);
+        double largest = 0.0, zero_sum = 0.0, yield_sum = 0.0;
+        int read = 0;
+        for (std::size_t i = 0; i < cpu.risk_labels.size(); ++i)
+        {
+            const std::string &l = cpu.risk_labels[i];
+            largest = std::max(largest, std::abs(ml->risks[i]));
+            const bool zero = l.rfind("zero[", 0) == 0, yield = l.rfind("div_yield[", 0) == 0;
+            if (!zero && !yield)
+                continue;
+            (zero ? zero_sum : yield_sum) += ml->risks[i];
+            read += ml->risks[i] != 0.0;
+            const double se = std::hypot(ml->risk_std_errors[i], cpu.risk_std_errors[i]);
+            EXPECT_NEAR(ml->risks[i], cpu.risks[i], 5.0 * se + 1e-9) << l;
+        }
+        EXPECT_GE(read, 4);
+        const auto at = [&](const std::string &label)
+        {
+            return ml->risks[static_cast<std::size_t>(
+                std::find(ml->risk_labels.begin(), ml->risk_labels.end(), label) - ml->risk_labels.begin())];
+        };
+        EXPECT_NEAR(at("rate"), zero_sum, 1e-9 * largest);
+        EXPECT_NEAR(at("div"), yield_sum, 1e-9 * largest);
     }
 
 } // namespace quantModeling

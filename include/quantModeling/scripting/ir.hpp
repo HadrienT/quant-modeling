@@ -148,6 +148,12 @@ namespace quantModeling::scripting::ir
         GridLev,      ///< the leverage at spot a and time b (mc::leverage_staircase)
         GridLevSlope, ///< its slope in the spot
         GridLevAccum, ///< a statement: adjoint a of the leverage at (spot b, time c), added to its two corners
+        // ── the forward curve's pillars (WP 32): parameters Theta[x + slot] ─
+        /// b times pillar shift a (a slot index, -1 for none; x the first
+        /// pillar's parameter): 0 at the shifts' value, read only for its
+        /// derivatives. a and b are the row's data.
+        CurveShift,
+        CurveAccum, ///< a statement: b x c (adjoint a times coefficient c) added to parameter x + slot b
         // ── regions ─────────────────────────────────────────────────────────
         If,          ///< a: condition; b: its Else; c: its EndIf
         Else,        ///< a: its If; c: its EndIf
@@ -203,7 +209,7 @@ namespace quantModeling::scripting::ir
     constexpr bool is_statement(Op op)
     {
         return op == Op::GridAccum || op == Op::GridLevAccum || op == Op::GridAccumDir ||
-               op == Op::GridSlopeAccumDir;
+               op == Op::GridSlopeAccumDir || op == Op::CurveAccum;
     }
 
     /// Whether `op` defines a number (the region markers and the statements do not).
@@ -253,6 +259,7 @@ namespace quantModeling::scripting::ir
             case Op::GridLevAccum:
             case Op::GridAccumDir:
             case Op::GridSlopeAccumDir:
+            case Op::CurveAccum:
                 return 7u;
             default: // binary operations, the phis, FuzzyIf (degree, payoff before or -1)
                 return 3u;
@@ -733,6 +740,14 @@ namespace quantModeling::scripting::ir
                     break;
                 case Op::GridLevAccum:
                     leverage_accumulate(f.grid(), c, val[in.c], a, f.theta_adjoint, f.theta_stride, f.grid0);
+                    continue;
+                case Op::CurveShift: // a pillar shift, at zero
+                    r = 0.0;
+                    break;
+                case Op::CurveAccum: // adjoint a times coefficient c into pillar slot b
+                    if (c >= 0.0)
+                        f.theta_adjoint[(static_cast<long>(in.x) + static_cast<long>(c)) * f.theta_stride] +=
+                            val[in.c] * a;
                     continue;
 
                 case Op::If:

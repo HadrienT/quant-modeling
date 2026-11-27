@@ -148,6 +148,7 @@ namespace quantModeling::scripting::ir
                 break;
             case Op::GridAccumDir:
             case Op::GridSlopeAccumDir:
+            case Op::CurveAccum:
                 id = b.raw(in.op, m(in.a), m(in.b), m(in.c), in.x);
                 break;
             case Op::Select:
@@ -863,6 +864,10 @@ namespace quantModeling::scripting::ir
                     return "grid_leverage_slope";
                 case Op::GridLevAccum:
                     return "grid_leverage_accumulate";
+                case Op::CurveShift:
+                    return "curve_shift";
+                case Op::CurveAccum:
+                    return "curve_accumulate";
                 case Op::Add:
                     return "add";
                 case Op::Sub:

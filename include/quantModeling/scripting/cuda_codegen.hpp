@@ -94,7 +94,10 @@ namespace quantModeling::scripting
     CudaSource cuda_path_source(const ir::Script &script, int model_kind, int n_assets, PathKernel kernel,
                                 bool qe = false, bool half = false, bool milstein = false,
                                 /// WP 32 F4: a model on a forward curve (PathLayout::curve).
-                                bool curve = false);
+                                bool curve = false,
+                                /// WP 32: its pillar shifts, differentiated by the
+                                /// adjoint kernel only (PathLayout::n_pillars).
+                                int pillars = 0);
 
     /**
      * What one compiled kernel serves: the model and the sampling options of

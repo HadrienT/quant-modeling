@@ -86,6 +86,9 @@ namespace quantModeling::scripting::ir
                                    "the spot: its slope jumps at every strike)");
             if (in.op == Op::GridAccumDir || in.op == Op::GridSlopeAccumDir)
                 throw InvalidInput("script IR: a tangent is taken of a second-order block");
+            if (in.op == Op::CurveAccum)
+                throw InvalidInput("script IR: no second order through the forward curve's pillars (their risks "
+                                   "are first order)");
             if (in.op == Op::GridAccum)
             {
                 // The statement adds a w_n(S) to node n's adjoint, the
@@ -216,6 +219,13 @@ namespace quantModeling::scripting::ir
                         if (ta >= 0)
                             t = b.mul(b.value(in.op == Op::GridVol ? Op::GridSlope : Op::GridLevSlope, A, B), ta);
                         break;
+                    case Op::CurveShift: // coef [slot = direction's pillar], dirs[d] = x + slot
+                    {
+                        const std::int32_t pillar = dirs[static_cast<std::size_t>(d)] - static_cast<std::int32_t>(in.x);
+                        if (pillar >= 0)
+                            t = b.select(b.value(Op::Eq, A, b.constant(static_cast<double>(pillar))), B, zero());
+                        break;
+                    }
                     case Op::GridSlope: // of an adjoint block: the curvature (C¹ grid, §14.16)
                         if (ta >= 0)
                             t = b.mul(b.value(Op::GridCurv, A, B), ta);
@@ -482,6 +492,7 @@ namespace quantModeling::scripting::ir
                             continue;
                         case Op::GridAccum:
                         case Op::GridLevAccum:
+                        case Op::CurveAccum:
                             throw InvalidInput("script IR: the adjoint is taken of a primal block");
                         default:
                             break;
@@ -596,6 +607,9 @@ namespace quantModeling::scripting::ir
                         case Op::GridLev:
                             accumulate(in.a, b_.mul(a, b_.value(Op::GridLevSlope, A, B)));
                             b_.raw(Op::GridLevAccum, a, A, B);
+                            break;
+                        case Op::CurveShift: // the pillar's adjoint, through the row's slot and coefficient
+                            b_.raw(Op::CurveAccum, a, r_[in.a], r_[in.b], in.x);
                             break;
                         default: // nothing flows into constants, data, logic
                             break;

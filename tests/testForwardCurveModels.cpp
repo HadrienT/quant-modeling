@@ -15,11 +15,15 @@
 #include "quantModeling/models/equity/curve_carry.hpp"
 #include "quantModeling/models/equity/sabr.hpp"
 #include "quantModeling/scripting/script_model_factory.hpp"
+#include "quantModeling/models/device_model.hpp"
+#include "quantModeling/scripting/ir_path.hpp"
+#include "quantModeling/scripting/ir_ad.hpp"
 #include "quantModeling/utils/thread_pool.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <numeric>
 #include <random>
 #include <span>
 #include <string>
@@ -617,12 +621,79 @@ namespace quantModeling
             double largest = 0.0;
             for (const double x : tape.risks)
                 largest = std::max(largest, std::abs(x));
-            ASSERT_LT(ir->risk_labels.size(), tape.risk_labels.size()) << name;
+            // every label, the pillars' among them (WP 32)
+            ASSERT_EQ(ir->risk_labels.size(), tape.risk_labels.size()) << name;
             for (std::size_t i = 0; i < ir->risk_labels.size(); ++i)
             {
                 ASSERT_EQ(ir->risk_labels[i], tape.risk_labels[i]) << name;
                 EXPECT_NEAR(ir->risks[i], tape.risks[i], 1e-10 * largest) << name << " " << tape.risk_labels[i];
             }
+        }
+    }
+
+    // WP 32: the pillar shifts in the IR (CurveShift) -- the tangent in
+    // every direction, the pillars' among them, is the adjoint's gradient
+    // path by path, under every model of the IR; the paths' bits are those
+    // of the program without pillars.
+    TEST(ForwardCurveModels, TheIrPillarTangentIsTheAdjoint)
+    {
+        namespace ir = scripting::ir;
+        const ValuationContext ctx{Date::from_iso("2026-06-01")};
+        const std::string src = "2026-08-01\n    s1 = spot()\n    pays 0.1 * df(2028-12-01)\n\n"
+                                "2027-03-01\n    pays max(spot() - s1, 0)\n    pays 0.5 * fwd(2027-09-01)\n";
+        for (const char *name : {"black_scholes", "local_vol", "heston", "slv"})
+        {
+            ScriptModelSpec s = spec_of(name);
+            s.forward_curve = market_curve();
+            const ScriptedProduct<Real> product(src, ctx);
+            auto model = make_script_model<Real>(s);
+            model->init(product.timeline(), product.defline());
+            DeviceModel dm;
+            ASSERT_TRUE(model->describe_device(dm)) << name;
+            std::vector<std::vector<Time>> mats;
+            for (const SampleDef &def : product.defline())
+                mats.push_back(def.discount_mats);
+            const int P = static_cast<int>(CurveCarry(*dm.curve).n_shifts());
+            const ir::PathProgram plain = ir::path_program(product.ir(), dm.kind, 1, true, false, false, false, false, true);
+            const ir::PathProgram primal =
+                ir::path_program(product.ir(), dm.kind, 1, true, false, false, false, false, true, P);
+            ASSERT_EQ(primal.layout.n_risks, plain.layout.n_risks + P) << name;
+            std::vector<std::int32_t> dirs(static_cast<std::size_t>(primal.layout.n_risks));
+            std::iota(dirs.begin(), dirs.end(), 0);
+            const ir::PathProgram tan = ir::tangent(primal, dirs);
+            const ir::PathProgram adj = ir::adjoint(primal);
+            const ir::PathData data = ir::path_data(primal.layout, dm, product.ir(), mats, product.baseline());
+            const ir::PathData plain_data = ir::path_data(plain.layout, dm, product.ir(), mats, product.baseline());
+            ir::DerivativeScratch w;
+            ir::PathScratch plain_scratch(plain);
+            mc::PathDraws draws;
+            draws.seed = 11;
+            draws.stride = dm.stride;
+            const std::size_t K = dirs.size();
+            double largest_pillar = 0.0;
+            for (int p = 0; p < 16; ++p)
+            {
+                std::vector<double> forward(K), gradient(data.theta.size(), 0.0);
+                draws.begin(static_cast<uint64_t>(p));
+                const double a =
+                    ir::run_path_tangent(tan, static_cast<int>(K), data, dm, product.ir(), draws, 1.0, w, forward.data());
+                draws.begin(static_cast<uint64_t>(p));
+                const double b = ir::run_path_adjoint(primal, adj, data, dm, product.ir(), draws, 1.0, 1.0, w,
+                                                      gradient.data());
+                draws.begin(static_cast<uint64_t>(p));
+                const double c = ir::run_path(plain, plain_data, dm, product.ir(), draws, 1.0, plain_scratch);
+                EXPECT_EQ(a, b) << name;
+                EXPECT_EQ(a, c) << name; // the shifts at zero leave the path's bits
+                double scale = 0.0;
+                for (std::size_t k = 0; k < K; ++k)
+                    scale = std::max(scale, std::abs(gradient[k]));
+                for (std::size_t k = 0; k < K; ++k)
+                    EXPECT_NEAR(forward[k], gradient[k], 1e-11 * (1.0 + scale)) << name << " risk " << k;
+                for (int j = 0; j < P; ++j)
+                    largest_pillar =
+                        std::max(largest_pillar, std::abs(gradient[static_cast<std::size_t>(primal.layout.th_pillar0 + j)]));
+            }
+            EXPECT_GT(largest_pillar, 0.0) << name;
         }
     }
 

@@ -82,10 +82,14 @@ namespace quantModeling
         /// of `t` its carry rate c_k (the CPU model's CurveCarry table): the
         /// step's rate argument is c_k + r. The events' numeraires, discounts
         /// and forwards are the curve's, computed on the host with the CPU
-        /// model's expressions. Price kernels only: on a curve the risks
-        /// (its pillars among them) stay on the CPU's tape.
+        /// model's expressions. The risks per pillar: curve_pillars below.
         std::optional<ForwardCurve> curve;
         std::vector<Real> step_carry;
+        /// The curve's pillar shifts a risk run differentiates (WP 32): set
+        /// by the engine for the per-path adjoint, which then gives the
+        /// risks per pillar as the CPU's tape does; 0, the rate and the
+        /// dividend as parallel shifts only (the tangent, Vibrato).
+        int curve_pillars = 0;
 
         int factors = 1; ///< Brownian draws per drawing step
         int stride = 1;  ///< draws per drawing step (>= factors)

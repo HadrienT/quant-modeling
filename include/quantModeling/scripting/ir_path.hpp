@@ -133,7 +133,21 @@ namespace quantModeling::scripting::ir
         bool curve = false;
         int carry_col = -1;
         int factor_col0 = -1;
-        int event_cols = 1; ///< per date: 1 + the most df() slots a date reads, + the most fwd() slots
+        /// WP 32: the risks per pillar of the forward curve, an adjoint
+        /// program's (DeviceModel::curve_pillars). Thetas th_pillar0 ..
+        /// + n_pillars - 1 are the pillar shifts, in CurveCarry's order,
+        /// risks after the model's scalars (the grid's points follow them).
+        /// Each step's rate and each date's factors (1/DF(t), DF(T)/DF(t),
+        /// F(T)/F(t), by their column) add kPillarTerms shifts, as
+        /// CurveShift(slot, coef) pairs read from the rows: a step's at
+        /// pil_step_col0, a date factor f's at pil_event_col0 + 2 kPillarTerms f.
+        static constexpr int kPillarTerms = 8;
+        int n_pillars = 0;
+        int th_pillar0 = -1;
+        int pil_step_col0 = -1;
+        int pil_event_col0 = -1;
+        int n_factor_cols = 0; ///< the date factors' columns (factor_col0 of them)
+        int event_cols = 1;    ///< per date: 1 + the most df() slots a date reads, + the most fwd() slots
         /// The date row's first fwd() column: tau = T - t (risk), or
         /// e^((r - q) tau) (price), q spot(0)'s dividend yield.
         int fwd_col0 = 1;
@@ -145,7 +159,8 @@ namespace quantModeling::scripting::ir
     /// even when the script reads no last-step expectation (Vibrato needs
     /// them, WP 27 §14.11).
     PathLayout path_layout(DeviceModel::Kind kind, int n_assets, const Script &script, bool risk,
-                           bool last_step = false, bool half = false, bool milstein = false, bool curve = false);
+                           bool last_step = false, bool half = false, bool milstein = false, bool curve = false,
+                           int pillars = 0);
 
     /// The whole program.
     struct PathProgram
@@ -168,7 +183,7 @@ namespace quantModeling::scripting::ir
     /// (PathLayout::half); local vol only, refused otherwise.
     PathProgram path_program(const Script &script, DeviceModel::Kind kind, int n_assets, bool risk,
                              bool last_step = false, bool qe = false, bool half = false, bool milstein = false,
-                             bool curve = false);
+                             bool curve = false, int pillars = 0);
 
     /// A script-level block bound to the path's state and data (VarIn, PayIn
     /// and Spot become State; Num and Df the date's data, or exp of the rate

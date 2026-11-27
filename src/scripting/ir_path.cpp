@@ -1,4 +1,5 @@
 #include "quantModeling/scripting/ir_path.hpp"
+#include "quantModeling/models/equity/curve_carry.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -41,6 +42,25 @@ namespace quantModeling::scripting::ir
 
     namespace
     {
+        /// x plus the pillar shifts of the row's pairs from column col0 (WP
+        /// 32): kPillarTerms CurveShift(slot, coef), zero at the shifts'
+        /// value, so x's bits are unchanged; x itself without pillars.
+        std::int32_t with_pillars(Builder &b, const PathLayout &l, int col0, std::int32_t x)
+        {
+            if (l.n_pillars <= 0)
+                return x;
+            for (int j = 0; j < PathLayout::kPillarTerms; ++j)
+                x = b.add(x, b.value(Op::CurveShift, b.input(Op::Data, col0 + 2 * j),
+                                     b.input(Op::Data, col0 + 2 * j + 1), static_cast<double>(l.th_pillar0)));
+            return x;
+        }
+
+        /// The first pair column of date factor f (its data column).
+        int pillar_col(const PathLayout &l, int f)
+        {
+            return l.pil_event_col0 + 2 * PathLayout::kPillarTerms * f;
+        }
+
         /// The survival slots of a block: their positions among its
         /// quantities, in order.
         std::vector<std::size_t> survival_slots(const Block &b)
@@ -54,7 +74,7 @@ namespace quantModeling::scripting::ir
     } // namespace
 
     PathLayout path_layout(DeviceModel::Kind kind, int n_assets, const Script &script, bool risk, bool last_step,
-                           bool half, bool milstein, bool curve)
+                           bool half, bool milstein, bool curve, int pillars)
     {
         PathLayout l;
         l.kind = kind;
@@ -147,6 +167,23 @@ namespace quantModeling::scripting::ir
                 l.event_cols *= 2;
             }
         }
+        if (pillars > 0)
+        {
+            if (!curve || !risk || n_assets != 1 || l.n_theta != l.n_risks)
+                throw InvalidInput("script IR: the risks per pillar are a risk program's on a forward curve, one "
+                                   "underlying");
+            l.n_pillars = pillars;
+            l.th_pillar0 = l.n_risks;
+            l.n_risks += pillars;
+            l.n_theta += pillars;
+            if (l.th_grid >= 0)
+                l.th_grid = l.n_theta; // the grid after the pillars
+            l.pil_step_col0 = l.step_cols;
+            l.step_cols += 2 * PathLayout::kPillarTerms;
+            l.n_factor_cols = l.factor_col0;
+            l.pil_event_col0 = l.event_cols;
+            l.event_cols += 2 * PathLayout::kPillarTerms * l.n_factor_cols;
+        }
         return l;
     }
 
@@ -206,14 +243,17 @@ namespace quantModeling::scripting::ir
                     id = b.input(Op::State, in.a);
                     break;
                 case Op::Num: // exp(r t), as script_path computes it
-                    id = l.risk ? b.value(Op::Exp, b.mul(b.input(Op::Theta, l.th_rate), b.input(Op::Data, 0)))
+                    id = l.risk ? b.value(Op::Exp, with_pillars(b, l, pillar_col(l, 0),
+                                                                b.mul(b.input(Op::Theta, l.th_rate),
+                                                                      b.input(Op::Data, 0))))
                                 : b.input(Op::Data, 0);
                     if (l.risk && l.factor_col0 >= 0) // 1/DF(t) e^{r t}, ModelCurve::write_rates
                         id = b.mul(b.input(Op::Data, l.factor_col0), id);
                     break;
                 case Op::Df: // exp(-r (T - t))
-                    id = l.risk ? b.value(Op::Exp,
-                                          b.mul(b.neg(b.input(Op::Theta, l.th_rate)), b.input(Op::Data, 1 + in.a)))
+                    id = l.risk ? b.value(Op::Exp, with_pillars(b, l, pillar_col(l, 1 + in.a),
+                                                                b.mul(b.neg(b.input(Op::Theta, l.th_rate)),
+                                                                      b.input(Op::Data, 1 + in.a))))
                                 : b.input(Op::Data, 1 + in.a);
                     if (l.risk && l.factor_col0 >= 0) // DF(T)/DF(t) e^{-r (T - t)}
                         id = b.mul(b.input(Op::Data, l.factor_col0 + 1 + in.a), id);
@@ -226,9 +266,10 @@ namespace quantModeling::scripting::ir
                     const std::int32_t S_g =
                         l.risk && l.factor_col0 >= 0 ? b.mul(S, b.input(Op::Data, l.factor_col0 + l.fwd_col0 + in.a))
                                                      : S;
-                    id = l.risk ? b.mul(S_g, b.value(Op::Exp, b.mul(b.sub(b.input(Op::Theta, l.th_rate),
-                                                                          b.input(Op::Theta, l.th_div)),
-                                                                    col)))
+                    id = l.risk ? b.mul(S_g, b.value(Op::Exp, with_pillars(b, l, pillar_col(l, l.fwd_col0 + in.a),
+                                                                           b.mul(b.sub(b.input(Op::Theta, l.th_rate),
+                                                                                       b.input(Op::Theta, l.th_div)),
+                                                                                 col))))
                                 : b.mul(S, col);
                     break;
                 }
@@ -474,7 +515,11 @@ namespace quantModeling::scripting::ir
             // The step's rate: r, or on a forward curve the curve's carry
             // over the step plus r (WP 32 F4), as the CPU model's T(c_k) + r.
             const auto rate = [&]
-            { return l.carry_col >= 0 ? b.add(data(l.carry_col), theta(l.th_rate)) : theta(l.th_rate); };
+            {
+                return l.carry_col >= 0
+                           ? with_pillars(b, l, l.pil_step_col0, b.add(data(l.carry_col), theta(l.th_rate)))
+                           : theta(l.th_rate);
+            };
             switch (l.kind)
             {
                 case DeviceModel::Kind::BlackScholes:
@@ -726,13 +771,13 @@ namespace quantModeling::scripting::ir
     } // namespace
 
     PathProgram path_program(const Script &script, DeviceModel::Kind kind, int n_assets, bool risk, bool last_step,
-                             bool qe, bool half, bool milstein, bool curve)
+                             bool qe, bool half, bool milstein, bool curve, int pillars)
     {
         const std::string why = path_program_unsupported(script, kind, n_assets);
         if (!why.empty())
             throw InvalidInput("script IR: " + why);
         PathProgram p;
-        p.layout = path_layout(kind, n_assets, script, risk, last_step, half, milstein, curve);
+        p.layout = path_layout(kind, n_assets, script, risk, last_step, half, milstein, curve, pillars);
         p.layout.qe = qe && !risk && (kind == DeviceModel::Kind::Heston || kind == DeviceModel::Kind::SLV);
         p.init = init_block(p.layout);
         p.step = step_block(p.layout);
@@ -740,6 +785,62 @@ namespace quantModeling::scripting::ir
             p.events.push_back(bind_event(b, p.layout));
         return p;
     }
+
+    namespace
+    {
+        /// kPillarTerms (slot, coef) pairs from `row`, -1 and 0 past the terms.
+        void write_pairs(double *row, const CurveCarry::Terms &terms)
+        {
+            if (terms.size() > static_cast<std::size_t>(PathLayout::kPillarTerms))
+                throw InvalidInput("script IR: a step or a date reads more forward-curve pillars than the kernels "
+                                   "hold");
+            for (int j = 0; j < PathLayout::kPillarTerms; ++j)
+            {
+                const bool used = static_cast<std::size_t>(j) < terms.size();
+                row[2 * j] = used ? static_cast<double>(terms[static_cast<std::size_t>(j)].index) : -1.0;
+                row[2 * j + 1] = used ? terms[static_cast<std::size_t>(j)].coef : 0.0;
+            }
+        }
+
+        void pillar_rows(const PathLayout &l, const DeviceModel &m, const Script &script,
+                         const std::vector<std::vector<Time>> &discount_mats, const std::vector<Time> &event_time,
+                         PathData &d)
+        {
+            if (!m.curve)
+                throw InvalidInput("script IR: the risks per pillar need the model's forward curve");
+            CurveCarry cc(*m.curve);
+            if (cc.n_shifts() != static_cast<std::size_t>(l.n_pillars))
+                throw InvalidInput("script IR: the layout's pillars are not the curve's");
+            cc.set_steps(m.t);
+            const auto scols = static_cast<std::size_t>(l.step_cols);
+            for (std::size_t s = 0; s < m.t.size(); ++s)
+                write_pairs(d.step_rows.data() + s * scols + l.pil_step_col0, cc.step_terms(s));
+            const std::size_t n_events = script.n_events();
+            std::vector<SampleDef> defline(n_events);
+            for (std::size_t e = 0; e < n_events; ++e)
+            {
+                if (e < discount_mats.size())
+                    defline[e].discount_mats = discount_mats[e];
+                if (e < script.event_fwd_mats.size())
+                    defline[e].forward_mats = script.event_fwd_mats[e];
+            }
+            cc.set_events(TimeLine(event_time.begin(), event_time.end()), defline);
+            const auto ecols = static_cast<std::size_t>(l.event_cols);
+            for (std::size_t e = 0; e < n_events; ++e)
+            {
+                double *row = d.event_rows.data() + e * ecols;
+                const auto at = [&](int f)
+                { return row + l.pil_event_col0 + 2 * PathLayout::kPillarTerms * f; };
+                write_pairs(at(0), cc.inv_discount_terms(e));
+                for (std::size_t i = 0; i < defline[e].discount_mats.size(); ++i)
+                    if (1 + static_cast<int>(i) < l.fwd_col0)
+                        write_pairs(at(1 + static_cast<int>(i)), cc.discount_terms(e, i));
+                for (std::size_t i = 0; i < defline[e].forward_mats.size(); ++i)
+                    if (l.fwd_col0 + static_cast<int>(i) < l.n_factor_cols)
+                        write_pairs(at(l.fwd_col0 + static_cast<int>(i)), cc.growth_terms(e, i));
+            }
+        }
+    } // namespace
 
     PathData path_data(const PathLayout &l, const DeviceModel &m, const Script &script,
                        const std::vector<std::vector<Time>> &discount_mats, const std::vector<Real> &baseline)
@@ -916,6 +1017,9 @@ namespace quantModeling::scripting::ir
                 }
             }
         }
+
+        if (l.n_pillars > 0) // the pillar shifts' coefficients (WP 32), the CPU model's CurveCarry terms
+            pillar_rows(l, m, script, discount_mats, event_time, d);
 
         d.baseline.assign(static_cast<std::size_t>(l.n_vars), 0.0);
         for (std::size_t i = 0; i < baseline.size() && i < d.baseline.size(); ++i)

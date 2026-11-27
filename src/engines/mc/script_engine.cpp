@@ -1,4 +1,5 @@
 #include "quantModeling/engines/mc/script_engine.hpp"
+#include "quantModeling/models/equity/curve_carry.hpp"
 
 #include "quantModeling/scripting/ir_ad.hpp"
 
@@ -203,6 +204,48 @@ namespace quantModeling
                             : "";
         }
 
+        /// The curve's pillar shifts a device model's adjoint differentiates
+        /// (WP 32): every one of its CurveCarry's, 0 off a curve.
+        int pillar_count(const DeviceModel &dm)
+        {
+            return dm.curve ? static_cast<int>(CurveCarry(*dm.curve).n_shifts()) : 0;
+        }
+
+        /// The label of each of the adjoint's parameters: the kernels hold
+        /// the model's scalars, then the pillars, then the grid
+        /// (PathLayout::th_pillar0); the CPU model's labels put the pillars
+        /// last. `base`: the scalars.
+        std::vector<std::size_t> labels_of_device(std::size_t n_device, std::size_t n_labels, std::size_t base,
+                                                  std::size_t pillars)
+        {
+            std::vector<std::size_t> to(n_device, n_labels);
+            for (std::size_t g = 0; g < n_device; ++g)
+                to[g] = g < base ? g : g < base + pillars ? n_labels - pillars + (g - base)
+                                                          : g - pillars;
+            return to;
+        }
+
+        /// `rows` (replicate-major, n_device a replicate) in the labels' order.
+        std::vector<double> rows_to_labels(const std::vector<double> &rows, const std::vector<std::size_t> &to,
+                                           std::size_t n_labels)
+        {
+            const std::size_t nd = to.size();
+            if (nd == 0 || rows.size() % nd != 0)
+                return rows;
+            std::vector<double> out(rows.size() / nd * n_labels, 0.0);
+            for (std::size_t r = 0; r < rows.size() / nd; ++r)
+                for (std::size_t g = 0; g < nd; ++g)
+                    if (to[g] < n_labels)
+                        out[r * n_labels + to[g]] = rows[r * nd + g];
+            return out;
+        }
+
+        /// The model's scalar risks in the kernels' layout (no pillars).
+        std::size_t device_scalars(const ScriptedProduct<Real> &product, const DeviceModel &dm)
+        {
+            return static_cast<std::size_t>(scripting::ir::path_layout(dm.kind, dm.n_assets, product.ir(), true).n_risks);
+        }
+
         bool describe_for_risks(const ISimulationModel<Real> &model, DeviceModel &dm)
         {
             if (!model.describe_device(dm))
@@ -347,6 +390,8 @@ namespace quantModeling
                     throw InvalidInput("this model runs on the CPU only");
                 if (risks_ && dm.kind != DeviceModel::Kind::LocalVol)
                     throw InvalidInput("multilevel risks run under local vol (the GPU's per-path adjoint)");
+                if (risks_) // the risks per pillar of a forward curve (WP 32)
+                    dm.curve_pillars = pillar_count(dm);
                 if (m->sim_dim() > static_cast<std::size_t>(sobol_detail::kMaxDimension))
                     throw LevelBeyondCapacity("multilevel QMC: level " + std::to_string(level) + " needs " +
                                               std::to_string(m->sim_dim()) + " draws per path, more than the " +
@@ -694,8 +739,13 @@ namespace quantModeling
         // Both are generated from the script's IR (WP 27, lots L3-L5).
         // vibrato: the tangent's blocks driven by Vibrato, over the scalar
         // risks only (WP 27 §14.11).
-        const bool adjoint =
-            !vibrato && (dm.kind == DeviceModel::Kind::LocalVol || dm.kind == DeviceModel::Kind::SLV);
+        // On a forward curve every model takes the adjoint, which gives the
+        // risks per pillar (WP 32); the tangent would need a pass per pillar.
+        const bool on_curve = dm.curve.has_value();
+        const bool adjoint = !vibrato && (dm.kind == DeviceModel::Kind::LocalVol ||
+                                          dm.kind == DeviceModel::Kind::SLV || (on_curve && dm.n_assets == 1));
+        if (adjoint && on_curve)
+            dm.curve_pillars = pillar_count(dm);
         const int dirs = !vibrato                                     ? mc::dual_directions(dm.kind, dm.n_assets)
                          : dm.n_assets != 1                           ? 0
                          : dm.kind == DeviceModel::Kind::BlackScholes ? 4
@@ -749,7 +799,8 @@ namespace quantModeling
         auto run = [&]() -> AADSimulResults
         {
             AADSimulResults res;
-            res.risk_labels = device_risk_labels(model, dm.curve.has_value());
+            res.risk_labels = dm.curve_pillars > 0 ? model.parameter_labels()
+                                                   : device_risk_labels(model, dm.curve.has_value());
             res.n_paths = static_cast<long long>(req.n_units) * (sobol ? kAadRqmcReplicates : 1);
             res.risks.assign(res.risk_labels.size(), 0.0);
             res.risk_std_errors.assign(res.risk_labels.size(), 0.0);
@@ -758,9 +809,18 @@ namespace quantModeling
                 std::vector<int>(req.devices.begin(), req.devices.begin() + res.gpus));
             if (adjoint)
             {
-                const gpu::ScriptAdjointGpuResult r = gpu::simulate_script_adjoint(req);
+                gpu::ScriptAdjointGpuResult r = gpu::simulate_script_adjoint(req);
                 res.price = r.price.mean;
                 res.price_std_error = r.price.std_error();
+                const std::size_t n_labels = res.risks.size();
+                if (dm.curve_pillars > 0) // the kernels' order into the labels'
+                {
+                    const auto to = labels_of_device(r.risks.size(), n_labels, device_scalars(product, dm),
+                                                     static_cast<std::size_t>(dm.curve_pillars));
+                    r.risks = rows_to_labels(r.risks, to, n_labels);
+                    r.risk_std_errors = rows_to_labels(r.risk_std_errors, to, n_labels);
+                    r.replicate_risks = rows_to_labels(r.replicate_risks, to, n_labels);
+                }
                 for (std::size_t i = 0; i < res.risks.size() && i < r.risks.size(); ++i)
                 {
                     res.risks[i] = r.risks[i];
@@ -810,7 +870,7 @@ namespace quantModeling
                 res.diagnostics = std::string(vibrato ? "Vibrato" : "forward-mode") + " risks on GPU (" + card + ", " +
                                   std::to_string(dirs) + " directions)" + draws + " + " + how;
             }
-            res.diagnostics += curve_risks_note(dm.curve.has_value());
+            res.diagnostics += curve_risks_note(dm.curve.has_value() && dm.curve_pillars == 0);
             return res;
         };
         // A card short of memory (the LLM shares it) is a reason to stay on
@@ -885,10 +945,22 @@ namespace quantModeling
         for (const MlmcLevel &l : r.levels)
             res.n_paths += l.n;
         {
+            // The levels' adjoints carry the pillars of a forward curve (WP 32):
+            // every label, the kernels' order put into the labels'.
             auto m = model.clone();
             m->init(product.timeline(), product.defline());
             DeviceModel dm;
-            res.risk_labels = device_risk_labels(*m, m->describe_device(dm) && dm.curve.has_value());
+            const bool described = m->describe_device(dm);
+            res.risk_labels = m->parameter_labels();
+            const int P = described ? pillar_count(dm) : 0;
+            if (P > 0)
+            {
+                const std::size_t R = static_cast<std::size_t>(risks.replicates), nl = res.risk_labels.size();
+                for (std::vector<double> &rows : risks.levels)
+                    if (R > 0 && rows.size() % R == 0 && !rows.empty())
+                        rows = rows_to_labels(rows, labels_of_device(rows.size() / R, nl, device_scalars(product, dm), static_cast<std::size_t>(P)),
+                                              nl);
+            }
         }
         // A risk is the sum of its levels' estimates, each the mean of the
         // level's replicates; its variance the sum of theirs.
@@ -935,23 +1007,28 @@ namespace quantModeling
         if (!why.empty())
             return std::nullopt;
 
+        // On a forward curve, its pillar shifts too (WP 32), as the tape's.
+        const int P = dm.n_assets == 1 ? pillar_count(dm) : 0;
         const ir::PathProgram primal = ir::path_program(product.ir(), dm.kind, dm.n_assets, true, false, false, false,
-                                                        false, dm.curve.has_value());
+                                                        false, dm.curve.has_value(), P);
         const ir::PathProgram adjoint = ir::adjoint(primal);
         const ir::PathData data =
             ir::path_data(primal.layout, dm, product.ir(), discount_lists(product), product.baseline());
         const std::size_t n_gradient = data.theta.size();
-        const auto n_risks = static_cast<std::size_t>(primal.layout.n_risks);
+        const auto n_risks = static_cast<std::size_t>(primal.layout.n_risks - P);
 
         AADSimulResults res;
-        res.risk_labels = device_risk_labels(model, dm.curve.has_value());
+        res.risk_labels = P > 0 ? model.parameter_labels() : device_risk_labels(model, dm.curve.has_value());
         const std::size_t n_labels = res.risk_labels.size();
         // The labels: the layout's risks, then the grid's points (a model
-        // with more labels -- Bates's jumps -- has zero risks there).
+        // with more labels -- Bates's jumps -- has zero risks there), then
+        // the pillars, which the layout holds after the scalars.
         const auto gradient_index = [&](std::size_t label) -> std::size_t
         {
             if (label < n_risks)
                 return label;
+            if (P > 0 && label >= n_labels - static_cast<std::size_t>(P))
+                return static_cast<std::size_t>(primal.layout.th_pillar0) + (label - (n_labels - P));
             return primal.layout.th_grid >= 0 ? static_cast<std::size_t>(primal.layout.th_grid) + (label - n_risks)
                                               : n_gradient;
         };

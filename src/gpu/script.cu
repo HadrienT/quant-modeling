@@ -582,9 +582,9 @@ namespace quantModeling::gpu
             // The conditioned coarse path's step row has one more column (the
             // fine sub-step's share, PathLayout::half): the same layout as
             // the kernel's (cuda_path_source), or the rows are misread.
-            const ir::PathLayout l = ir::path_layout(req.model->kind, req.model->n_assets, *req.ir, risk, false,
-                                                     !req.model->half_share.empty(),
-                                                     req.model->milstein_before_dates, req.model->curve.has_value());
+            const ir::PathLayout l = ir::path_layout(
+                req.model->kind, req.model->n_assets, *req.ir, risk, false, !req.model->half_share.empty(),
+                req.model->milstein_before_dates, req.model->curve.has_value(), risk ? req.model->curve_pillars : 0);
             const ir::PathData data = ir::path_data(l, *req.model, *req.ir, req.discount_mats, req.baseline);
             detail::PathUnit u;
             u.draws = draws;
@@ -702,7 +702,7 @@ namespace quantModeling::gpu
             const scripting::CudaSource src = scripting::cuda_path_source(
                 *req.ir, static_cast<int>(req.model->kind), req.model->n_assets, kernel,
                 req.model->variance_scheme == mc::VarianceScheme::QE, !req.model->half_share.empty(),
-                req.model->milstein_before_dates, req.model->curve.has_value());
+                req.model->milstein_before_dates, req.model->curve.has_value(), req.model->curve_pillars);
             if (src.source.empty())
                 return refuse(src.why);
             scripting::CudaKernelSpec spec;
@@ -884,6 +884,8 @@ namespace quantModeling::gpu
         const int dirs = mc::dual_directions(req.model->kind, req.model->n_assets);
         if (dirs <= 0)
             throw InvalidInput("GPU: forward-mode risks cover Black-Scholes and Heston");
+        if (req.model->curve_pillars > 0)
+            throw InvalidInput("GPU: the risks per pillar of the forward curve are the per-path adjoint's");
         // The tangent built from the IR (WP 27 lot L3): any number of
         // directions. The dual numbers on the interpreter, its oracle until
         // the tangent beat them, are gone (maintainer's decision 2026-11-16):
@@ -934,7 +936,8 @@ namespace quantModeling::gpu
                                ")");
         const scripting::ir::PathLayout layout =
             scripting::ir::path_layout(req.model->kind, req.model->n_assets, *req.ir, true, false,
-                                       !req.model->half_share.empty(), false, req.model->curve.has_value());
+                                       !req.model->half_share.empty(), false, req.model->curve.has_value(),
+                                       req.model->curve_pillars);
         // The risks: the model's scalar parameters, then its grid's points.
         const int n_params =
             layout.n_risks + (layout.th_grid >= 0 ? static_cast<int>(req.model->grid.size()) : 0);
