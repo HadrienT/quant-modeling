@@ -1586,6 +1586,13 @@ def price_script(
                 historical_fixings=fixings,
                 variance_scheme=scheme,
                 knock_outs_as_thresholds=req.knock_outs_as_thresholds,
+                # The market's forward curve (WP 32 F5): every date of the
+                # script reads its own forward and discount.
+                **(
+                    market.curve_kwargs()
+                    if market is not None and model in CURVE_MODELS
+                    else {}
+                ),
                 **{**_multilevel(req, model), **over},
             )
 
@@ -1606,6 +1613,13 @@ def price_script(
             **({"script": script} if start_today else {}),
         }
     )
+
+
+#: The models that step on the market's forward curve (WP 32): the
+#: single-underlying equity ones. Hull-White keeps its own rates curve.
+CURVE_MODELS = frozenset(
+    ("black_scholes", "local_vol", "heston", "slv", "rough_bergomi")
+)
 
 
 def _market_quotes(req):

@@ -200,6 +200,8 @@ def _calibrate(market: LocalVolMarket) -> StochasticVol:
         market.sigma_loc_flat,
         n_particles=SLV_PARTICLES,
         seed=SLV_SEED,
+        # The particles step on the curve SLVSimModel prices on (WP 32 F5).
+        **market.curve_kwargs(),
     )
     L = lev["leverage_flat"]
     floor, cap = lev["leverage_floor"], lev["leverage_cap"]
@@ -245,8 +247,14 @@ def store_key(market: LocalVolMarket) -> str:
             "ticker": market.ticker,
             "snapshot": market.valuation_date.isoformat(),
             "spot": market.spot,
-            "rate": market.rate,
-            "dividend": market.dividend,
+            # On the market's curve the leverage reads it, and Heston only
+            # the slices: not the flat fit at the product's horizon, so one
+            # calibration serves every horizon (WP 32 F5).
+            **(
+                {"curve": market.curve.key()}
+                if market.curve is not None
+                else {"rate": market.rate, "dividend": market.dividend}
+            ),
             "slices": market.svi_slices,
             "K": market.K_grid,
             "T": market.T_grid,

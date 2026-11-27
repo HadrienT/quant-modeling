@@ -1,6 +1,7 @@
 import type { PricingResult } from "@/shared/api";
 import { Badge } from "@/shared/ui";
 import { Uncertainty } from "@/shared/ui/density";
+import { CurveRisks, PILLAR } from "./CurveRisks";
 import { SecondOrderNote, SecondOrderRows } from "./SecondOrderGreeks";
 
 type Risk = NonNullable<PricingResult["risks"]>[number];
@@ -95,7 +96,12 @@ export function ScriptGreeks({
 	secondOrder?: { greeks: PricingResult["greeks"]; method: string };
 }) {
 	const grid = risks.filter((r) => GRID.test(r.label));
-	const scalars = risks.filter((r) => !GRID.test(r.label));
+	// An equity forward curve's pillars (a dividend yield among them) go to
+	// their own table; a Hull-White curve's zero rates stay rows.
+	const onCurve = risks.some((r) => r.label.startsWith("div_yield["));
+	const isPillar = (r: Risk) => onCurve && PILLAR.test(r.label);
+	const pillars = risks.filter(isPillar);
+	const scalars = risks.filter((r) => !GRID.test(r.label) && !isPillar(r));
 	const zero = scalars.filter((r) => r.value === 0 && r.std_error === 0);
 	const rows = scalars.filter((r) => !zero.includes(r));
 	return (
@@ -168,6 +174,7 @@ export function ScriptGreeks({
 				{secondOrder && <SecondOrderRows greeks={secondOrder.greeks} />}
 			</table>
 			{secondOrder && <SecondOrderNote {...secondOrder} />}
+			<CurveRisks pillars={pillars} />
 			{zero.length > 0 && (
 				<p className="text-2xs text-ink-muted">
 					Exactly zero, so not tabulated:{" "}

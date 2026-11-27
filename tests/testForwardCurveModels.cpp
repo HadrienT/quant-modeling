@@ -8,7 +8,11 @@
 #include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/engines/analytic/heston_cos.hpp"
+#include "quantModeling/market/dupire_from_svi.hpp"
 #include "quantModeling/market/forward_curve.hpp"
+#include "quantModeling/market/slv_calibration.hpp"
+#include "quantModeling/market/svi_surface.hpp"
+#include "quantModeling/models/equity/curve_carry.hpp"
 #include "quantModeling/models/equity/sabr.hpp"
 #include "quantModeling/scripting/script_model_factory.hpp"
 #include "quantModeling/utils/thread_pool.hpp"
@@ -465,8 +469,9 @@ namespace quantModeling
             const double h = 1e-6;
             for (std::size_t j = 0; j < n; ++j)
             {
-                const std::string jj = "[" + std::to_string(j) + "]";
-                const std::size_t ir = index_of(labels, "rate" + jj), iq = index_of(labels, "div" + jj);
+                const std::string jj = std::to_string(j);
+                const std::size_t ir = index_of(labels, CurveCarry::rate_label(c.pillar_times()[j]));
+                const std::size_t iq = index_of(labels, CurveCarry::dividend_label(c.pillar_times()[j]));
                 ASSERT_LT(ir, labels.size()) << name << " rate" << jj;
                 ASSERT_LT(iq, labels.size()) << name << " div" << jj;
                 rate_sum += adj[ir];
@@ -502,8 +507,8 @@ namespace quantModeling
             double rate_sum = 0.0, div_sum = 0.0;
             for (std::size_t j = 0; j < n; ++j)
             {
-                const std::size_t ir = index_of(r.risk_labels, "rate[" + std::to_string(j) + "]");
-                const std::size_t iq = index_of(r.risk_labels, "div[" + std::to_string(j) + "]");
+                const std::size_t ir = index_of(r.risk_labels, CurveCarry::rate_label(c.pillar_times()[j]));
+                const std::size_t iq = index_of(r.risk_labels, CurveCarry::dividend_label(c.pillar_times()[j]));
                 ASSERT_LT(ir, r.risks.size()) << name;
                 ASSERT_LT(iq, r.risks.size()) << name;
                 rate_sum += r.risks[ir];
@@ -515,7 +520,7 @@ namespace quantModeling
             EXPECT_NEAR(div_sum, div, 1e-9 * std::abs(div)) << name;
             // The payment of 5 on day 61 reads the discount pillars around
             // it only: no risk to the pillars past the call's date.
-            const std::size_t last = index_of(r.risk_labels, "rate[" + std::to_string(n - 1) + "]");
+            const std::size_t last = index_of(r.risk_labels, CurveCarry::rate_label(c.pillar_times()[n - 1]));
             EXPECT_EQ(r.risks[last], 0.0) << name;
 
             // On threads, each with its clone: the pillar shifts are leaves
@@ -531,6 +536,51 @@ namespace quantModeling
             for (std::size_t i = 0; i < one.risks.size(); ++i)
                 EXPECT_EQ(one.risks[i], many.risks[i]) << name << " " << one.risk_labels[i];
         }
+    }
+
+    // WP 32 F5: the Dupire grid places its strikes at the curve's forwards,
+    // and SLV's particles step on its carry; a flat curve is the scalars'
+    // grid and leverage, bit for bit.
+    TEST(ForwardCurveModels, DupireGridAndLeverageOnTheCurve)
+    {
+        std::vector<SVISliceCalibration> slices;
+        for (const double T : {0.25, 0.5, 1.0, 2.0})
+        {
+            SVISliceCalibration c;
+            c.ttm = T;
+            c.params = SVIParams{0.01 * T, 0.08 * T, -0.4, 0.0, 0.2};
+            slices.push_back(c);
+        }
+        const SVISurface surface(slices);
+        const double r = 0.04, q = 0.01;
+        const ForwardCurve flat = ForwardCurve::flat(S0, r, q);
+        const GridLocalVol plain = build_local_vol_grid(surface, S0, r, q, -0.5, 0.5, 30, 12);
+        const GridLocalVol same = build_local_vol_grid(surface, S0, r, q, -0.5, 0.5, 30, 12, {}, nullptr, &flat);
+        EXPECT_EQ(plain.K_grid(), same.K_grid());
+        EXPECT_EQ(plain.sigma_loc(), same.sigma_loc());
+
+        // On a curve: the strikes span the band at its forward at the mid
+        // maturity, and the scalars are not read.
+        const ForwardCurve c = market_curve();
+        const GridLocalVol on = build_local_vol_grid(surface, S0, 0.5, 0.5, -0.5, 0.5, 30, 12, {}, nullptr, &c);
+        EXPECT_NEAR(on.K_grid().front(), c.forward(0.5 * (0.25 + 2.0)) * std::exp(-0.5), 1e-12);
+        const GridLocalVol on2 = build_local_vol_grid(surface, S0, 0.0, 0.0, -0.5, 0.5, 30, 12, {}, nullptr, &c);
+        EXPECT_EQ(on.sigma_loc(), on2.sigma_loc());
+
+        SLVCalibrationSettings settings;
+        settings.n_particles = 4000;
+        const HestonParams h{0.04, 1.5, 0.04, 0.5, -0.7};
+        const SLVLeverageGrid a =
+            calibrate_slv_leverage(S0, r, q, h, plain.K_grid(), plain.T_grid(), plain.sigma_loc(), settings);
+        const SLVLeverageGrid b = calibrate_slv_leverage(S0, r, q, h, plain.K_grid(), plain.T_grid(),
+                                                         plain.sigma_loc(), settings, &flat);
+        EXPECT_EQ(a.leverage, b.leverage);
+        const SLVLeverageGrid d1 =
+            calibrate_slv_leverage(S0, 0.5, 0.5, h, on.K_grid(), on.T_grid(), on.sigma_loc(), settings, &c);
+        const SLVLeverageGrid d2 =
+            calibrate_slv_leverage(S0, 0.0, 0.0, h, on.K_grid(), on.T_grid(), on.sigma_loc(), settings, &c);
+        EXPECT_EQ(d1.leverage, d2.leverage);
+        EXPECT_NE(d1.leverage, a.leverage);
     }
 
     TEST(ForwardCurveModels, ModelsWithoutACurveRefuseIt)

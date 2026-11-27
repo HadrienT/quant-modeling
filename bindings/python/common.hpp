@@ -15,6 +15,9 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <optional>
+
+#include "quantModeling/market/forward_curve.hpp"
 #include "quantModeling/market/discount_curve.hpp"
 #include "quantModeling/models/equity/heston.hpp"
 #include "quantModeling/pricers/registry.hpp"
@@ -102,6 +105,28 @@ inline quantModeling::HestonParams heston_from_py(const std::map<std::string, do
 inline qm_::DiscountCurve rate_curve(std::vector<qm_::Time> times, std::vector<qm_::Real> dfs)
 {
     return qm_::DiscountCurve(std::move(times), std::move(dfs), qm_::CurveExtrapolation::FlatForward);
+}
+
+/// The market's forward curve as the Python side hands it over (WP 32 F5):
+/// none when `times` is empty; forwards and discount factors on the same
+/// pillars, or, with no discount factors, the forwards over the flat
+/// `rate` (a typed rate replaces the market's discount, not its forwards).
+inline std::optional<qm_::ForwardCurve> forward_curve_of(double spot, double rate,
+                                                         const std::vector<double> &times,
+                                                         const std::vector<double> &forwards,
+                                                         const std::vector<double> &discount_factors)
+{
+    if (times.empty())
+    {
+        if (!forwards.empty() || !discount_factors.empty())
+            throw std::invalid_argument("forwards and forward_dfs need forward_times");
+        return std::nullopt;
+    }
+    if (discount_factors.empty())
+        return qm_::ForwardCurve(spot, qm_::DiscountCurve(rate), times, forwards);
+    if (discount_factors.size() != times.size())
+        throw std::invalid_argument("forward_dfs needs one discount factor per forward_times entry");
+    return qm_::ForwardCurve::from_pillars(spot, times, forwards, discount_factors);
 }
 
 // Each domain's classes and functions, registered in this order by

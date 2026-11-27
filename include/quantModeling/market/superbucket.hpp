@@ -67,7 +67,7 @@ namespace quantModeling
         Real spot, Real rate, Real dividend, Real k_min, Real k_max,
         std::size_t n_strikes, std::size_t n_maturities,
         const std::vector<Real> &dV_dsigma_loc,
-        const DupireFromSVIParams &params = {});
+        const DupireFromSVIParams &params = {}, const ForwardCurve *forwards = nullptr);
 
     /**
      * @brief The superbucket of a local-vol price whose grid an eSSVI
@@ -98,7 +98,8 @@ namespace quantModeling
                                         Real spot, Real rate, Real dividend, Real k_min, Real k_max,
                                         std::size_t n_strikes, std::size_t n_maturities,
                                         const std::vector<Real> &dV_dsigma_loc,
-                                        const DupireFromSVIParams &params = {});
+                                        const DupireFromSVIParams &params = {},
+                                        const ForwardCurve *forwards = nullptr);
 
 } // namespace quantModeling
 

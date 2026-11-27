@@ -95,8 +95,10 @@ static py::dict calibrate_vol_surface_impl(
     quantModeling::Real k_min, quantModeling::Real k_max,
     std::size_t n_strikes, std::size_t n_maturities, std::size_t min_quotes_per_slice,
     const quantModeling::CleaningParams &cleaning_params, const std::string &surface_model,
-    double essvi_forward_smoothing, double essvi_min_forward_vol)
+    double essvi_forward_smoothing, double essvi_min_forward_vol, const std::vector<double> &forward_times,
+    const std::vector<double> &forwards, const std::vector<double> &forward_dfs)
 {
+    const auto curve = forward_curve_of(spot, rate, forward_times, forwards, forward_dfs);
     quantModeling::ESSVICalibrationSettings essvi;
     essvi.forward_smoothing = essvi_forward_smoothing;
     essvi.min_forward_vol = essvi_min_forward_vol;
@@ -105,7 +107,8 @@ static py::dict calibrate_vol_surface_impl(
     const auto result = quantModeling::calibrate_vol_surface(
         std::move(quotes), spot, rate, dividend, k_min, k_max, n_strikes, n_maturities,
         min_quotes_per_slice, cleaning_params, {}, {}, {},
-        surface_model == "essvi" ? quantModeling::SurfaceModel::ESSVI : quantModeling::SurfaceModel::SVI, essvi);
+        surface_model == "essvi" ? quantModeling::SurfaceModel::ESSVI : quantModeling::SurfaceModel::SVI, essvi,
+        curve ? &*curve : nullptr);
 
     py::list slices;
     for (const auto &s : result.slices)
@@ -232,7 +235,10 @@ static py::dict calibrate_slv_leverage_impl(double spot, double rate, double div
                                             const std::vector<double> &K_grid,
                                             const std::vector<double> &T_grid,
                                             const std::vector<double> &sigma_loc_flat,
-                                            std::size_t n_particles, int seed)
+                                            std::size_t n_particles, int seed,
+                                            const std::vector<double> &forward_times,
+                                            const std::vector<double> &forwards,
+                                            const std::vector<double> &forward_dfs)
 {
     using namespace quantModeling;
     const HestonParams h = heston_from_py(heston);
@@ -243,8 +249,9 @@ static py::dict calibrate_slv_leverage_impl(double spot, double rate, double div
     SLVLeverageGrid grid;
     {
         py::gil_scoped_release release;
+        const auto curve = forward_curve_of(spot, rate, forward_times, forwards, forward_dfs);
         grid = calibrate_slv_leverage(spot, rate, dividend, h, K_grid, T_grid,
-                                      sigma_loc_flat, settings);
+                                      sigma_loc_flat, settings, curve ? &*curve : nullptr);
     }
     py::dict out;
     out["K_grid"] = grid.K_grid;
@@ -266,9 +273,12 @@ static py::dict dupire_superbucket_impl(const py::list &slices_py, double spot, 
                                         std::size_t n_strikes, std::size_t n_maturities,
                                         const std::vector<double> &dV_dsigma_loc,
                                         const std::string &surface_model, double essvi_forward_smoothing,
-                                        double essvi_min_forward_vol)
+                                        double essvi_min_forward_vol, const std::vector<double> &forward_times,
+                                        const std::vector<double> &forwards,
+                                        const std::vector<double> &forward_dfs)
 {
     using namespace quantModeling;
+    const auto curve = forward_curve_of(spot, rate, forward_times, forwards, forward_dfs);
     if (surface_model != "svi" && surface_model != "essvi")
         throw std::invalid_argument("dupire_superbucket: surface_model is 'svi' or 'essvi'");
     std::vector<SVISliceCalibration> slices;
@@ -349,14 +359,14 @@ static py::dict dupire_superbucket_impl(const py::list &slices_py, double spot, 
             if (next != reported.size())
                 throw InvalidInput("dupire_superbucket: the slices are not the ones this eSSVI calibration keeps");
             r = essvi_superbucket(quotes, ttms, settings, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities,
-                                  dV_dsigma_loc);
+                                  dV_dsigma_loc, {}, curve ? &*curve : nullptr);
         }
     }
     else
     {
         py::gil_scoped_release release;
         r = dupire_superbucket(slices, quotes, spot, rate, dividend, k_min, k_max, n_strikes,
-                               n_maturities, dV_dsigma_loc);
+                               n_maturities, dV_dsigma_loc, {}, curve ? &*curve : nullptr);
     }
     py::list rows;
     for (const QuoteVega &v : r.quotes)
@@ -459,7 +469,8 @@ void register_market(py::module_ &m)
           py::arg("rate"), py::arg("dividend"), py::arg("k_min"), py::arg("k_max"),
           py::arg("n_strikes"), py::arg("n_maturities"), py::arg("dV_dsigma_loc"),
           py::arg("surface_model") = "svi", py::arg("essvi_forward_smoothing") = 0.1,
-          py::arg("essvi_min_forward_vol") = 0.05,
+          py::arg("essvi_min_forward_vol") = 0.05, py::arg("forward_times") = std::vector<double>{},
+          py::arg("forwards") = std::vector<double>{}, py::arg("forward_dfs") = std::vector<double>{},
           "dV / d(each quoted implied vol) from dV/dsigma_loc (the local-vol AAD "
           "risks, K-major): through Dupire on an AAD tape, then through each SVI "
           "fit by the implicit function theorem (market/superbucket.hpp, lot 17h). "
@@ -477,7 +488,8 @@ void register_market(py::module_ &m)
     m.def("calibrate_slv_leverage", &calibrate_slv_leverage_impl, py::arg("spot"),
           py::arg("rate"), py::arg("dividend"), py::arg("heston"), py::arg("K_grid"),
           py::arg("T_grid"), py::arg("sigma_loc_flat"), py::arg("n_particles") = 50000,
-          py::arg("seed") = 1,
+          py::arg("seed") = 1, py::arg("forward_times") = std::vector<double>{},
+          py::arg("forwards") = std::vector<double>{}, py::arg("forward_dfs") = std::vector<double>{},
           "Leverage L(K, T) such that Heston dynamics times L reproduce the "
           "given Dupire grid's marginals (particle method, "
           "market/slv_calibration.hpp). Same K-major layout as sigma_loc_flat.");
@@ -494,9 +506,13 @@ void register_market(py::module_ &m)
           py::arg("min_quotes_per_slice") = 6,
           py::arg("cleaning_params") = quantModeling::CleaningParams{}, py::arg("surface_model") = "svi",
           py::arg("essvi_forward_smoothing") = 0.1, py::arg("essvi_min_forward_vol") = 0.05,
+          py::arg("forward_times") = std::vector<double>{}, py::arg("forwards") = std::vector<double>{},
+          py::arg("forward_dfs") = std::vector<double>{},
           "Clean raw option quotes, calibrate one SVI slice per maturity, and build the "
           "Dupire local-vol grid (K_grid/T_grid/sigma_loc_flat) that price_local_vol_mc consumes. "
-          "Raises RuntimeError (InvalidInput) if fewer than 2 maturities have enough clean quotes.");
+          "Raises RuntimeError (InvalidInput) if fewer than 2 maturities have enough clean quotes. "
+          "forward_times / forwards / forward_dfs: the market's forward curve (WP 32), at whose "
+          "forwards the grid's strikes are placed, K = F(T) e^k; empty: the flat spot e^{(rate - dividend) T}.");
 
     // ── LocalVolSurface sub-struct ─────────────────────────────────────────────────────────────
     m.def("calibrate_sabr_slice", &calibrate_sabr_slice_impl,

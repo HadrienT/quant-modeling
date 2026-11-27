@@ -235,3 +235,52 @@ class MarketCarry:
         z = ZeroCurve.of(expiries).zero(horizon)
         r = z if typed_rate is None else float(typed_rate)
         return MarketCarry(horizon, z, c, r, r - c, typed_rate is not None)
+
+
+@dataclass(frozen=True)
+class MarketCurve:
+    """The market's forwards and discounts on a ticker's accepted expiries,
+    as the C++ ForwardCurve takes them (WP 32 F5): every model on one
+    underlying steps on its carry and discounts on its DF(T), ln F and ln DF
+    linear in T between the expiries. Each forward is the expiry's own,
+    carried onto the close the product is priced from (F S / S_expiry, as
+    CarryCurve reads it). A typed rate replaces the discount, flat, and keeps
+    the forwards: `discounts` is then empty and the pricers discount at the
+    rate they are given."""
+
+    times: Tuple[float, ...]
+    forwards: Tuple[float, ...]
+    discounts: Tuple[float, ...]
+
+    @staticmethod
+    def of(
+        expiries: Sequence["db.ChainIvExpiry"],
+        spot: float,
+        typed_rate: Optional[float],
+    ) -> "MarketCurve":
+        points: Dict[float, Tuple[float, float]] = {}
+        for e in expiries:
+            s = e.spot if e.spot else spot
+            points.setdefault(e.ttm, (spot * e.forward / s, e.discount))
+        times = tuple(sorted(points))
+        if not times:
+            raise ValueError("no accepted expiry to read the forwards from")
+        return MarketCurve(
+            times,
+            tuple(points[t][0] for t in times),
+            () if typed_rate is not None else tuple(points[t][1] for t in times),
+        )
+
+    def kwargs(self) -> Dict[str, List[float]]:
+        """The forward_times / forwards / forward_dfs arguments of the
+        module's price_script, calibrate_vol_surface, dupire_superbucket and
+        calibrate_slv_leverage."""
+        return {
+            "forward_times": list(self.times),
+            "forwards": list(self.forwards),
+            "forward_dfs": list(self.discounts),
+        }
+
+    def key(self) -> List[List[float]]:
+        """What a cache key or an audit record keeps of it."""
+        return [list(self.times), list(self.forwards), list(self.discounts)]

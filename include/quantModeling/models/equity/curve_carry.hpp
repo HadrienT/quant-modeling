@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -69,10 +70,17 @@ namespace quantModeling
             const std::size_t nd = curve_.discount_curve().pillar_times().size();
             const std::size_t nf = curve_.pillar_times().size();
             for (std::size_t j = 0; j < nd; ++j)
-                labels_.push_back("rate[" + std::to_string(j) + "]");
+                labels_.push_back(rate_label(curve_.discount_curve().pillar_times()[j]));
             for (std::size_t i = 0; i < nf; ++i)
-                labels_.push_back("div[" + std::to_string(i) + "]");
+                labels_.push_back(dividend_label(curve_.pillar_times()[i]));
         }
+
+        /// A pillar's risk labels, by its time in years: "zero[t]" as the
+        /// Hull-White hybrid names its pillars' zero rates, "div_yield[t]";
+        /// ten significant digits, so that the two pillars of a dividend, a
+        /// second apart, stay apart.
+        static std::string rate_label(Time t) { return "zero[" + years(t) + "]"; }
+        static std::string dividend_label(Time t) { return "div_yield[" + years(t) + "]"; }
 
         const ForwardCurve &curve() const { return curve_; }
 
@@ -153,7 +161,7 @@ namespace quantModeling
         }
 
         /// The pillar shifts: the discount pillars' rates, then the forward
-        /// pillars' dividend yields ("rate[j]", "div[i]").
+        /// pillars' dividend yields (rate_label, dividend_label).
         std::size_t n_shifts() const { return labels_.size(); }
         const std::vector<std::string> &shift_labels() const { return labels_; }
         /// The shifts' coefficients in step k's rate argument, in ln(1/DF(t_e)),
@@ -164,6 +172,13 @@ namespace quantModeling
         const Terms &growth_terms(std::size_t e, std::size_t m) const { return growth_terms_[e][m]; }
 
       private:
+        static std::string years(Time t)
+        {
+            char buf[32];
+            std::snprintf(buf, sizeof buf, "%.10g", t);
+            return buf;
+        }
+
         /// Δ ln DF(t) in the shifts, dense.
         std::vector<Real> log_discount_terms(Time t) const
         {

@@ -63,7 +63,7 @@ surfaces come from `market_snapshot`, whose source `QM_OPTION_DATA` chooses: `ch
 (`options.chain_iv`, the quotes `data-ingest` cleans at ingestion; production's default since
 2026-11-26, set in `docker-compose.prod.yml`) or `legacy` (`options.chain_snapshot`, Yahoo's IVs;
 the code's default, for dev and tests, and the rollback). Under `chain_iv` a product is priced on
-the market's carry at its maturity and an empty `rate` means the market's (WP 31 L6). The implied-vol
+the market's forward curve, every date its own forward and discount (WP 32; a closed form, several underlyings and Hull-White keep the flat carry at the product's maturity, WP 31 L6), and an empty `rate` means the market's. The implied-vol
 surface is `QM_VOL_SURFACE`: `essvi` in production (WP 30 E2, E4), `svi` the code's default and
 the rollback. The `notebooks/` directory is a personal
 sandbox, out of scope. No more BigQuery: the project is entirely off cloud.
