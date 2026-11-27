@@ -85,6 +85,10 @@ namespace quantModeling::mc
         /// src/gpu/script.cu). Null: computed on the path.
         const Real *event_numeraire = nullptr;
         const Real *event_disc = nullptr;
+        /// WP 32 F4, prices only: per step, the forward curve's carry rate
+        /// c_k (DeviceModel::step_carry); the step's rate is then c_k + r,
+        /// and the event tables above are the curve's. Null: a flat rate.
+        const Real *step_carry = nullptr;
 
         SpotControls controls;
         /// The exercise rule of a script with exercise() / call() (host
@@ -174,6 +178,9 @@ namespace quantModeling::mc
         {
             const Time ts = v.t[s];
             const Time dt = ts - t_prev;
+            // The step's rate: r, or the curve's carry over it plus r, as the
+            // CPU model's T(c_k) + r (prices only: the duals take no curve).
+            const Real rk = v.step_carry ? v.step_carry[s] + v.r : v.r;
             if (v.draws[s])
             {
                 switch (v.kind)
@@ -214,7 +221,7 @@ namespace quantModeling::mc
                         break;
                     case DeviceModel::Kind::LocalVol:
                         if constexpr (kPlain)
-                            local_vol_step(v.grid, v.r, v.q, S[0], ts, dt, draws.draw(d, 0, sign));
+                            local_vol_step(v.grid, rk, v.q, S[0], ts, dt, draws.draw(d, 0, sign));
                         break;
                     case DeviceModel::Kind::SLV:
                         if constexpr (kPlain)
@@ -222,9 +229,9 @@ namespace quantModeling::mc
                             const double z0 = draws.draw(d, 0, sign);
                             const double z1 = draws.draw(d, 1, sign);
                             if (v.variance_scheme == VarianceScheme::QE)
-                                slv_qe_step(v.grid, v.heston, v.r, v.q, S[0], var, ts, dt, z0, z1);
+                                slv_qe_step(v.grid, v.heston, rk, v.q, S[0], var, ts, dt, z0, z1);
                             else
-                                slv_step(v.grid, v.heston, v.r, v.q, S[0], var, ts, dt, z0, z1);
+                                slv_step(v.grid, v.heston, rk, v.q, S[0], var, ts, dt, z0, z1);
                         }
                         break;
                     case DeviceModel::Kind::Heston:
@@ -234,14 +241,17 @@ namespace quantModeling::mc
                         if constexpr (kPlain)
                             if (v.variance_scheme == VarianceScheme::QE)
                             {
-                                qe_step(in.heston, 1.0, in.r, in.q, S[0], var, dt, z0, z1);
+                                qe_step(in.heston, 1.0, rk, in.q, S[0], var, dt, z0, z1);
                                 break;
                             }
                         const double sqdt = sqrt(dt);
                         const T v_plus = max(var, variance_floor());
                         const T sqrt_v_plus = sqrt(v_plus);
                         const T zero(0.0);
-                        S[0] = S[0] * exp(heston_log_return(in.r, in.q, zero, zero, v_plus, sqrt_v_plus, sqdt, dt, z0));
+                        T r_step = in.r;
+                        if constexpr (kPlain)
+                            r_step = rk;
+                        S[0] = S[0] * exp(heston_log_return(r_step, in.q, zero, zero, v_plus, sqrt_v_plus, sqdt, dt, z0));
                         heston_variance_step(in.heston, var, v_plus, sqrt_v_plus, sqdt, dt, z0, z1);
                         break;
                     }

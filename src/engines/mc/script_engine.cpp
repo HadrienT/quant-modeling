@@ -181,6 +181,28 @@ namespace quantModeling
         /// The device model of a risk run: its variance stepped by Euler
         /// whatever the price runs use (#317) -- QE's branch switch and its
         /// atom at 0 make the pathwise derivatives discontinuous.
+        /// The risk labels of a run the kernels compiled from the IR take: the
+        /// model's own parameters. On a forward curve (WP 32 F4) the pillars'
+        /// shifts, appended last (zero[t], div_yield[t]), are the CPU tape's
+        /// only; the kernels take the rate and the dividend as parallel shifts.
+        std::vector<std::string> device_risk_labels(const ISimulationModel<Real> &model, bool on_curve)
+        {
+            std::vector<std::string> labels = model.parameter_labels();
+            if (on_curve)
+                while (!labels.empty() &&
+                       (labels.back().rfind("zero[", 0) == 0 || labels.back().rfind("div_yield[", 0) == 0))
+                    labels.pop_back();
+            return labels;
+        }
+
+        /// What a device run says when it leaves the pillars to the tape.
+        std::string curve_risks_note(bool on_curve)
+        {
+            return on_curve ? " | on the forward curve: rate and dividend as parallel shifts; the risks per expiry "
+                              "run on the CPU's tape (device cpu)"
+                            : "";
+        }
+
         bool describe_for_risks(const ISimulationModel<Real> &model, DeviceModel &dm)
         {
             if (!model.describe_device(dm))
@@ -727,7 +749,7 @@ namespace quantModeling
         auto run = [&]() -> AADSimulResults
         {
             AADSimulResults res;
-            res.risk_labels = model.parameter_labels();
+            res.risk_labels = device_risk_labels(model, dm.curve.has_value());
             res.n_paths = static_cast<long long>(req.n_units) * (sobol ? kAadRqmcReplicates : 1);
             res.risks.assign(res.risk_labels.size(), 0.0);
             res.risk_std_errors.assign(res.risk_labels.size(), 0.0);
@@ -788,6 +810,7 @@ namespace quantModeling
                 res.diagnostics = std::string(vibrato ? "Vibrato" : "forward-mode") + " risks on GPU (" + card + ", " +
                                   std::to_string(dirs) + " directions)" + draws + " + " + how;
             }
+            res.diagnostics += curve_risks_note(dm.curve.has_value());
             return res;
         };
         // A card short of memory (the LLM shares it) is a reason to stay on
@@ -864,7 +887,8 @@ namespace quantModeling
         {
             auto m = model.clone();
             m->init(product.timeline(), product.defline());
-            res.risk_labels = m->parameter_labels();
+            DeviceModel dm;
+            res.risk_labels = device_risk_labels(*m, m->describe_device(dm) && dm.curve.has_value());
         }
         // A risk is the sum of its levels' estimates, each the mean of the
         // level's replicates; its variance the sum of theirs.
@@ -911,7 +935,8 @@ namespace quantModeling
         if (!why.empty())
             return std::nullopt;
 
-        const ir::PathProgram primal = ir::path_program(product.ir(), dm.kind, dm.n_assets, true);
+        const ir::PathProgram primal = ir::path_program(product.ir(), dm.kind, dm.n_assets, true, false, false, false,
+                                                        false, dm.curve.has_value());
         const ir::PathProgram adjoint = ir::adjoint(primal);
         const ir::PathData data =
             ir::path_data(primal.layout, dm, product.ir(), discount_lists(product), product.baseline());
@@ -919,7 +944,7 @@ namespace quantModeling
         const auto n_risks = static_cast<std::size_t>(primal.layout.n_risks);
 
         AADSimulResults res;
-        res.risk_labels = model.parameter_labels();
+        res.risk_labels = device_risk_labels(model, dm.curve.has_value());
         const std::size_t n_labels = res.risk_labels.size();
         // The labels: the layout's risks, then the grid's points (a model
         // with more labels -- Bates's jumps -- has zero risks there).
@@ -1169,7 +1194,8 @@ namespace quantModeling
         if (!why.empty())
             return std::nullopt;
 
-        const ir::PathProgram primal = ir::path_program(product.ir(), dm.kind, 1, true, true);
+        const ir::PathProgram primal =
+            ir::path_program(product.ir(), dm.kind, 1, true, true, false, false, false, dm.curve.has_value());
         const ir::PathLayout &l = primal.layout;
         const int K = l.n_risks;
         std::vector<std::int32_t> dirs(static_cast<std::size_t>(K));

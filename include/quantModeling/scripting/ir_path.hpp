@@ -122,6 +122,17 @@ namespace quantModeling::scripting::ir
         /// Price programs only.
         bool milstein = false;
         int mil_col = -1;
+        /// WP 32 F4: the model steps on a forward curve; the step row's
+        /// column `carry_col` is the curve's carry rate over the step, which
+        /// the step adds to the rate (c_k + r, DeviceModel::step_carry) --
+        /// every model of a risk program, local vol, Heston and SLV of a price
+        /// one (Black-Scholes's price reads its tabulated drift). A price's
+        /// date rows hold the curve's factors times the rate's; a risk's hold
+        /// its times and maturities, and from `factor_col0` the curve's
+        /// factors alone (1/DF(t), DF(T)/DF(t), F(T)/F(t)) in the same order.
+        bool curve = false;
+        int carry_col = -1;
+        int factor_col0 = -1;
         int event_cols = 1; ///< per date: 1 + the most df() slots a date reads, + the most fwd() slots
         /// The date row's first fwd() column: tau = T - t (risk), or
         /// e^((r - q) tau) (price), q spot(0)'s dividend yield.
@@ -134,7 +145,7 @@ namespace quantModeling::scripting::ir
     /// even when the script reads no last-step expectation (Vibrato needs
     /// them, WP 27 §14.11).
     PathLayout path_layout(DeviceModel::Kind kind, int n_assets, const Script &script, bool risk,
-                           bool last_step = false, bool half = false, bool milstein = false);
+                           bool last_step = false, bool half = false, bool milstein = false, bool curve = false);
 
     /// The whole program.
     struct PathProgram
@@ -156,7 +167,8 @@ namespace quantModeling::scripting::ir
     /// `half`: a multilevel coarse path conditioned on the fine one
     /// (PathLayout::half); local vol only, refused otherwise.
     PathProgram path_program(const Script &script, DeviceModel::Kind kind, int n_assets, bool risk,
-                             bool last_step = false, bool qe = false, bool half = false, bool milstein = false);
+                             bool last_step = false, bool qe = false, bool half = false, bool milstein = false,
+                             bool curve = false);
 
     /// A script-level block bound to the path's state and data (VarIn, PayIn
     /// and Spot become State; Num and Df the date's data, or exp of the rate

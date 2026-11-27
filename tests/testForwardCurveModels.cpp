@@ -180,8 +180,15 @@ namespace quantModeling
             ScriptModelSpec s = spec_of(name);
             s.forward_curve = c;
             Paths p(s, kDates);
+            // F4: the device carries the curve and the model's carry per step
+            // (rough Bergomi has no device description).
             DeviceModel d;
-            EXPECT_FALSE(p.model->describe_device(d)) << name << ": the device has a flat rate until F4";
+            if (name != "rough_bergomi")
+            {
+                ASSERT_TRUE(p.model->describe_device(d)) << name;
+                ASSERT_TRUE(d.curve.has_value()) << name;
+                EXPECT_EQ(d.step_carry.size(), d.t.size()) << name;
+            }
             const Scenario<Real> &x = p.next();
             for (std::size_t e = 0; e < kDates.size(); ++e)
             {
@@ -581,6 +588,42 @@ namespace quantModeling
             calibrate_slv_leverage(S0, 0.0, 0.0, h, on.K_grid(), on.T_grid(), on.sigma_loc(), settings, &c);
         EXPECT_EQ(d1.leverage, d2.leverage);
         EXPECT_NE(d1.leverage, a.leverage);
+    }
+
+    // WP 32 F4: the IR's adjoint on the CPU (what the GPU's kernels are
+    // generated from) on a curve, against the tape on the same Philox
+    // paths: the model's own risks, the rate and dividend as parallel
+    // shifts, and the pillars the tape's only.
+    TEST(ForwardCurveModels, TheIrAdjointOnTheCurveIsTheTapes)
+    {
+        using aad::Number;
+        const ValuationContext ctx{Date::from_iso("2026-06-01")};
+        const std::string src = "2026-08-01\n    s1 = spot()\n    pays 0.1 * df(2028-12-01)\n\n"
+                                "2027-03-01\n    pays max(spot() - s1, 0)\n    pays 0.5 * fwd(2027-09-01)\n";
+        for (const char *name : {"black_scholes", "local_vol", "heston", "slv"})
+        {
+            ScriptModelSpec s = spec_of(name);
+            s.forward_curve = market_curve();
+            const ScriptedProduct<Real> product(src, ctx);
+            auto model = make_script_model<Real>(s);
+            std::string why;
+            const auto ir = simulate_script_aad_ir(product, *model, 2048, 5, why);
+            ASSERT_TRUE(ir.has_value()) << name << ": " << why;
+            const ScriptedProduct<Number> tape_product(src, ctx);
+            auto tape_model = make_script_model<Number>(s);
+            const AADSimulResults tape =
+                simulate_aad(tape_product, *tape_model, 2048, 5, first_aad_payoff, RngKind::Philox);
+            EXPECT_NEAR(ir->price, tape.price, 1e-12 * std::abs(tape.price)) << name;
+            double largest = 0.0;
+            for (const double x : tape.risks)
+                largest = std::max(largest, std::abs(x));
+            ASSERT_LT(ir->risk_labels.size(), tape.risk_labels.size()) << name;
+            for (std::size_t i = 0; i < ir->risk_labels.size(); ++i)
+            {
+                ASSERT_EQ(ir->risk_labels[i], tape.risk_labels[i]) << name;
+                EXPECT_NEAR(ir->risks[i], tape.risks[i], 1e-10 * largest) << name << " " << tape.risk_labels[i];
+            }
+        }
     }
 
     TEST(ForwardCurveModels, ModelsWithoutACurveRefuseIt)

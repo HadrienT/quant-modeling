@@ -403,7 +403,7 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
     } // namespace
 
     CudaSource cuda_path_source(const ir::Script &script, int model_kind, int n_assets, PathKernel kernel, bool qe,
-                                bool half, bool milstein)
+                                bool half, bool milstein, bool curve)
     {
         CudaSource out;
         if (script.empty())
@@ -434,7 +434,7 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
         }
         const ir::PathProgram primal =
             ir::path_program(script, kind, n_assets, kernel != PathKernel::Price, kernel == PathKernel::Vibrato,
-                             kernel == PathKernel::Price && qe, half, milstein);
+                             kernel == PathKernel::Price && qe, half, milstein, curve);
         const ir::PathLayout &l = primal.layout;
         std::ostringstream src;
         src << kPrelude;

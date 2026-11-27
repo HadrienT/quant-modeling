@@ -340,8 +340,8 @@ namespace quantModeling
                 return false;
             else
             {
-                if (milstein_ || carry_)
-                    return false; // the device's step into a date is log-Euler; a flat rate (WP 32 F4)
+                if (milstein_)
+                    return false; // the device's step into a date is log-Euler
                 d = DeviceModel{};
                 d.kind = DeviceModel::Kind::LocalVol;
                 d.r = r_;
@@ -356,6 +356,12 @@ namespace quantModeling
                 d.event.clear();
                 for (const std::ptrdiff_t e : event_index_of_step_)
                     d.event.push_back(static_cast<int>(e));
+                // WP 32 F4: the curve, and each step's carry rate as this model's.
+                if (carry_)
+                {
+                    d.curve = carry_->tables().curve();
+                    d.step_carry = carry_->tables().step_rates();
+                }
                 return true;
             }
         }

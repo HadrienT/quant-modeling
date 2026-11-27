@@ -112,6 +112,7 @@ namespace quantModeling
         }
 
         Real step_rate(std::size_t k) const { return step_rate_[k]; }
+        const std::vector<Real> &step_rates() const { return step_rate_; }
 
         /// The events' numeraires, discounts and forward growths.
         void set_events(const TimeLine &events, const std::vector<SampleDef> &defline)
@@ -259,6 +260,9 @@ namespace quantModeling
             tables_.set_events(events, defline);
         }
         Real deflated_spot_ratio(Time t) const { return tables_.deflated_spot_ratio(t); }
+
+        /// The tables, for the device's description (WP 32 F4).
+        const CurveCarry &tables() const { return tables_; }
 
         std::vector<T> &shifts() { return shifts_; }
         const std::vector<std::string> &shift_labels() const { return tables_.shift_labels(); }

@@ -530,6 +530,7 @@ if(QM_BUILD_TESTS)
       tests/gpu/testGpuPaths.cpp
       tests/gpu/testGpuScripts.cpp
       tests/gpu/testGpuForward.cpp
+      tests/gpu/testGpuForwardCurve.cpp
       tests/gpu/testGpuScriptJit.cpp
       tests/gpu/testGpuParallelUnits.cpp
       tests/gpu/testGpuRisks.cpp

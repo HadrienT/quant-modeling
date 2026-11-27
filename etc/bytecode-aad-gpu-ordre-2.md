@@ -363,6 +363,20 @@ specialised Heston kernel moved in the last bit. Details and measurements:
 The AAD of Part II does not use the compiled path yet; how to make the GPU
 AAD fast is an open question of WP 26.
 
+**A model on a forward curve (WP 32 F4, 2026-11-27).** The path program
+reads the market's carry and discounting as data, not as parameters. The
+step row gains a column, the curve's carry rate over the step c_k (the CPU
+model's `CurveCarry` table), which the step adds to the rate theta: the
+drift is (c_k + r - q - sigma^2/2) dt, the CPU model's T(c_k) + r, and r and
+q are parallel shifts at zero. A price's date rows hold the curve's factors
+times the shift's (1/DF(t) e^{rt}, DF(T)/DF(t) e^{-r(T-t)}, F(T)/F(t)
+e^{(r-q)(T-t)}), computed on the host with the CPU's expressions; a risk
+program's rows keep its times and maturities and add the curve's factors in
+a second block of columns (`PathLayout::factor_col0`), which `Num`, `Df` and
+`Fwd` multiply in, so the tangent and the adjoint differentiate r and q as
+before. The curve's pillars are not thetas: their risks (WP 32 F3) stay the
+CPU tape's, whose rate and dividend risks are their sums.
+
 ---
 
 # Partie II — L'AAD sur GPU

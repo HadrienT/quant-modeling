@@ -274,8 +274,8 @@ namespace quantModeling
                 return false;
             else
             {
-                if (curve_ || carry_)
-                    return false; // the device has a flat rate only (WP 32 F4)
+                if (curve_)
+                    return false; // the device reads a ForwardCurve, not a discount curve
                 d = DeviceModel{};
                 d.kind = DeviceModel::Kind::BlackScholes;
                 d.r = r_;
@@ -290,6 +290,12 @@ namespace quantModeling
                     d.event.push_back(static_cast<int>(i));
                     d.drift.push_back(steps_[i].drift);
                     d.vol_sqrt_dt.push_back(steps_[i].vol_sqrt_dt);
+                }
+                // WP 32 F4: the curve, and each step's carry rate as this model's.
+                if (carry_)
+                {
+                    d.curve = carry_->tables().curve();
+                    d.step_carry = carry_->tables().step_rates();
                 }
                 return true;
             }

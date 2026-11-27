@@ -320,8 +320,8 @@ namespace quantModeling
                 return false;
             else
             {
-                if (lambda_ != 0.0 || carry_)
-                    return false; // jumps stay on the CPU; the device has a flat rate (WP 32 F4)
+                if (lambda_ != 0.0)
+                    return false; // jumps stay on the CPU
                 d = DeviceModel{};
                 d.kind = DeviceModel::Kind::Heston;
                 d.r = r_;
@@ -337,6 +337,12 @@ namespace quantModeling
                 d.event.clear();
                 for (const std::ptrdiff_t e : event_index_of_step_)
                     d.event.push_back(static_cast<int>(e));
+                // WP 32 F4: the curve, and each step's carry rate as this model's.
+                if (carry_)
+                {
+                    d.curve = carry_->tables().curve();
+                    d.step_carry = carry_->tables().step_rates();
+                }
                 return true;
             }
         }
