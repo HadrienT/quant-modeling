@@ -40,12 +40,20 @@ function Cell({ risk }: { risk?: Risk }) {
 }
 
 /**
- * Rho and the dividend risk split by expiry: one adjoint risk per pillar of
- * the forward curve the price was simulated on, summing to the Rho and the
- * dividend yield above (the parallel shift). Only the expiries the product
+ * Rho and the dividend risk split by expiry: one risk per pillar of the
+ * forward curve the price was computed on (the adjoint's, or a closed
+ * form's, exact), summing to the Rho and the dividend yield above (the
+ * parallel shift). Only the expiries the product
  * reads are listed; the others are exactly zero.
  */
-export function CurveRisks({ pillars }: { pillars: Risk[] }) {
+export function CurveRisks({
+	pillars,
+	exact = false,
+}: {
+	pillars: Risk[];
+	/** a closed form's risks, exact: they sum to its Rho alone above */
+	exact?: boolean;
+}) {
 	const all = rows(pillars);
 	const read = all.filter(
 		(r) => (r.zero && r.zero.value !== 0) || (r.div && r.div.value !== 0),
@@ -81,8 +89,10 @@ export function CurveRisks({ pillars }: { pillars: Risk[] }) {
 			<p className="mt-1 text-2xs text-ink-muted">
 				Per 1.00 of the expiry&apos;s zero rate or dividend yield (÷10,000 for
 				one bp). A zero rate moves that expiry&apos;s discount and forward
-				together, as Rho does; the rows sum to Rho and to the dividend yield
-				risk above.
+				together, as Rho does;{" "}
+				{exact
+					? "the zero rates sum to Rho above, exactly (the closed form's own derivatives)."
+					: "the rows sum to Rho and to the dividend yield risk above."}
 			</p>
 		</details>
 	);

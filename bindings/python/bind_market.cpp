@@ -17,6 +17,7 @@
 #include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/curve_bootstrap.hpp"
 #include "quantModeling/market/forward_curve.hpp"
+#include "quantModeling/engines/analytic/curve_closed_forms.hpp"
 #include "quantModeling/market/vol_surface_pipeline.hpp"
 #include "quantModeling/market/rough_bergomi_calibration.hpp"
 #include "quantModeling/engines/xva/cross_currency_exposure_engine.hpp"
@@ -441,6 +442,53 @@ static py::dict distribution_to_py(const quantModeling::PathDistribution &r)
     return out;
 }
 
+namespace
+{
+    /// closed_form_on_curve (WP 32 F6): a library closed form on the
+    /// market's forward curve, with its risk per pillar.
+    py::dict closed_form_on_curve_impl(const std::string &product, double spot, double rate, double vol,
+                                       double strike, double maturity, bool is_call, double payout,
+                                       const std::vector<double> &forward_times, const std::vector<double> &forwards,
+                                       const std::vector<double> &forward_dfs, const std::vector<double> &fixings,
+                                       bool geometric)
+    {
+        using namespace quantModeling;
+        const auto curve = forward_curve_of(spot, rate, forward_times, forwards, forward_dfs);
+        if (!curve)
+            throw std::invalid_argument("closed_form_on_curve: forward_times are required");
+        const ForwardCurve &c = *curve;
+        CurveClosedForm v;
+        if (product == "vanilla")
+            v = black_scholes_vanilla(c, vol, strike, maturity, is_call);
+        else if (product == "digital")
+            v = black_scholes_digital(c, vol, strike, maturity, is_call, payout);
+        else if (product == "forward")
+            v = equity_forward(c, strike, maturity);
+        else if (product == "asian")
+            v = geometric ? geometric_asian(c, vol, strike, is_call, fixings, maturity)
+                          : arithmetic_asian_levy(c, vol, strike, is_call, fixings, maturity);
+        else
+            throw std::invalid_argument("closed_form_on_curve: product is vanilla, digital, forward or asian");
+        const auto [rho, dq] = curve_parallel_risks(v.sensitivity);
+        py::list pillars;
+        for (const PillarRisk &p : curve_pillar_risks(c, v.sensitivity))
+        {
+            py::dict d;
+            d["label"] = p.label;
+            d["value"] = p.value;
+            pillars.append(d);
+        }
+        py::dict out;
+        out["price"] = v.price;
+        out["forward"] = c.forward(maturity);
+        out["discount"] = c.discount(maturity);
+        out["rho"] = rho;
+        out["dividend_risk"] = dq;
+        out["pillars"] = pillars;
+        return out;
+    }
+} // namespace
+
 void register_market(py::module_ &m)
 {
     // The equity forward curve (WP 32): what the models will read in place of
@@ -464,6 +512,18 @@ void register_market(py::module_ &m)
              "ln DF(t1) / DF(t2).")
         .def("dividend", &quantModeling::ForwardCurve::dividend, py::arg("t1"), py::arg("t2"),
              "rate(t1, t2) - carry(t1, t2): the integrated dividend yield, repo included.");
+
+    m.def("closed_form_on_curve", &closed_form_on_curve_impl, py::arg("product"), py::arg("spot"),
+          py::arg("rate"), py::arg("vol"), py::arg("strike"), py::arg("maturity"), py::arg("is_call") = true,
+          py::arg("payout") = 1.0, py::arg("forward_times") = std::vector<double>{},
+          py::arg("forwards") = std::vector<double>{}, py::arg("forward_dfs") = std::vector<double>{},
+          py::arg("fixings") = std::vector<double>{}, py::arg("geometric") = false,
+          "A Black-Scholes closed form on the market's forward curve (blueprint/wp/32-forward-curve.md F6): "
+          "product 'vanilla', 'digital' (payout), 'forward' (S(T) - strike) or 'asian' (fixings, geometric "
+          "exact, arithmetic by Levy's moment matching), paid at `maturity`. forward_times / forwards / "
+          "forward_dfs as price_script takes them (no forward_dfs: discounted at `rate`). Returns price, "
+          "forward and discount at maturity, rho and dividend_risk (parallel shifts) and pillars: "
+          "[{label, value}] per pillar, zero[t] and div_yield[t] as the Monte Carlo's, summing to them.");
 
     m.def("dupire_superbucket", &dupire_superbucket_impl, py::arg("slices"), py::arg("spot"),
           py::arg("rate"), py::arg("dividend"), py::arg("k_min"), py::arg("k_max"),

@@ -199,6 +199,47 @@ def test_the_adjoint_risks_split_rho_by_expiry(store):
     assert zeros["zero[2]"] == pytest.approx(-2.0 * discount(2.0), rel=1e-6)
 
 
+# ── F6: the closed forms read the curve at their expiry ───────────────────
+
+
+def analytic(product, **kw):
+    from app.schemas import ScriptedProductRequest
+
+    req = dict(product=product, ticker="AAA", valuation_date=SNAP, maturity=0.75)
+    return pricing_service.price_scripted_product(
+        ScriptedProductRequest(**{**req, **kw})
+    )
+
+
+@pytest.mark.parametrize(
+    "product", ["european-call", "european-put", "digital-call", "equity-forward"]
+)
+def test_a_closed_form_between_expiries_is_the_monte_carlos(store, product):
+    # 0.75 y falls between two expiries: the closed form reads the forward
+    # the Monte Carlo steps on (ln F linear in T), not a carry rate
+    # interpolated on its own.
+    exact = analytic(product, engine="analytic")
+    mc = analytic(product, model="black_scholes", n_paths=200_000, seed=3)
+    assert exact.mc_std_error == 0.0
+    assert abs(exact.npv - mc.npv) <= max(4 * mc.mc_std_error, 1e-9 * abs(exact.npv))
+    # Rho and the dividend risk by expiry: exact, summing to the formula's
+    # rho, on the two expiries around 0.75 y only.
+    risks = {x.label: x.value for x in exact.risks}
+    zeros = {k: v for k, v in risks.items() if k.startswith("zero[")}
+    assert len(zeros) == len(TTMS) and all(x.std_error == 0.0 for x in exact.risks)
+    assert sum(zeros.values()) == pytest.approx(exact.greeks.rho, rel=1e-9)
+    read = {k for k, v in risks.items() if v != 0.0}
+    assert read == {"zero[0.5]", "zero[1]", "div_yield[0.5]", "div_yield[1]"}
+
+
+def test_a_typed_rate_keeps_the_curves_forward_in_the_closed_form(store):
+    exact = analytic("equity-forward", engine="analytic", rate=0.03)
+    mc = analytic("equity-forward", model="black_scholes", rate=0.03, n_paths=50_000)
+    assert abs(exact.npv - mc.npv) <= max(4 * mc.mc_std_error, 1e-9 * abs(exact.npv))
+    # A flat typed rate has no pillar of its own: the dividend yields only.
+    assert not any(x.label.startswith("zero[") for x in exact.risks)
+
+
 # ── The replay of a valuation recorded before the curve ───────────────────
 
 

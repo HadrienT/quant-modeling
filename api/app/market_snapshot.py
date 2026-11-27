@@ -137,23 +137,14 @@ class LocalVolMarket:
     #: chain_iv only: the market's forward curve on those expiries (WP 32
     #: F5): the Dupire grid's strikes sit at its forwards, and the models on
     #: one underlying step on it; `rate` and `dividend` stay the flat fit at
-    #: the horizon, for what still reads scalars (closed forms, several
-    #: underlyings, Hull-White).
+    #: the horizon, for what still reads scalars (several underlyings,
+    #: Hull-White); a closed form reads the curve at its expiry (F6).
     curve: Optional["chain_iv.MarketCurve"] = None
 
     def curve_kwargs(self) -> Dict[str, List[float]]:
         """The module's forward_times / forwards / forward_dfs arguments:
         empty under legacy."""
         return self.curve.kwargs() if self.curve is not None else {}
-
-    def carry_for(self, horizon: float, rate: Optional[float]):
-        """The market carry at another horizon (chain_iv), for a closed form
-        that needs no grid; None under legacy."""
-        if not self.expiries:
-            return None
-        return chain_iv.MarketCarry.at(
-            self.expiries, self.spot, max(horizon, 1.0 / 365.0), rate
-        )
 
     def surface_slices(self) -> List[Dict[str, float]]:
         """The SVI slices every mark reads: see surface_slices()."""
@@ -662,8 +653,9 @@ def _local_vol_market(
                     f"The market's forward curve (options.chain_iv, "
                     f"{len(curve.times)} expiries to {curve.times[-1]:.2f}y): a "
                     "simulation on one underlying reads every date's own forward "
-                    "and discount. A closed form, several underlyings and "
-                    f"Hull-White take the flat carry at {carry.horizon:.2f}y: "
+                    "and discount, and a closed form the curve's at its expiry. "
+                    f"Several underlyings and Hull-White take the flat carry at "
+                    f"{carry.horizon:.2f}y: "
                     f"carry {carry.carry:.4%}, rate {carry.rate:.4%}, so a "
                     f"dividend yield of {carry.dividend:.4%}."
                 ),

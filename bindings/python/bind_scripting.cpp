@@ -636,7 +636,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
             const std::optional<double> mean = product.black_scholes_control_mean(
                 multi ? spec.spots : std::vector<Real>{spec.spot}, spec.rate,
                 multi ? spec.dividends : std::vector<Real>{spec.dividend},
-                multi ? spec.vols : std::vector<Real>{spec.vol});
+                multi ? spec.vols : std::vector<Real>{spec.vol},
+                spec.forward_curve ? &*spec.forward_curve : nullptr);
             product.set_control_mean(mean);
             control_note = mean ? " | controlPays: its Black-Scholes expectation computed by the engine"
                                 : " | controlPays ignored: a cash flow with no closed form the engine knows "

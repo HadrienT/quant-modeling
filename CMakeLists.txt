@@ -65,6 +65,7 @@ target_sources(quantModeling
         src/engines/base.cpp
         src/engines/analytic/black_scholes.cpp
         src/engines/analytic/asian.cpp
+        src/engines/analytic/curve_closed_forms.cpp
         src/engines/analytic/future.cpp
         src/engines/analytic/bonds.cpp
         src/engines/mc/black_scholes.cpp
@@ -417,6 +418,7 @@ if(QM_BUILD_TESTS)
     tests/testDiscountCurve.cpp
     tests/testForwardCurve.cpp
     tests/testForwardCurveModels.cpp
+    tests/testCurveClosedForms.cpp
     tests/testCurveBootstrap.cpp
     tests/testCredit.cpp
     tests/testMertonStructural.cpp
